@@ -1,0 +1,30 @@
+[
+    {
+        "field": "Motivation",
+        "question": "この研究はどういった動機・問題意識で行われた？"
+    },
+    {
+        "field": "Motivation",
+        "question": "この研究における主要なResearch questionを一文で述べると？"
+    },
+    {
+        "field": "Motivation",
+        "question": "そのResearch questionはなぜ既存の研究では回答されていなかった？"
+    },
+    {
+        "field": "Method",
+        "question": "この研究における研究対象および解析手法をまとめて"
+    },
+    {
+        "field": "Method",
+        "question": "彼らはどういう根拠のもと、その手法でresearch questionに回答できると判断した？"
+    },
+    {
+        "field": "Insight",
+        "question": "この研究によって新しく判明した事柄を具体的に説明して"
+    },
+    {
+        "field": "Unsolved",
+        "question": "彼らが解決できなかった課題や、残る疑問点を挙げて"
+    }
+]
