@@ -1,4 +1,7 @@
 
+# Citation manager integration: Zotero ========================================
+
+## Dependency -----------------------------------------------------------------
 import logging
 import platform
 import subprocess
@@ -6,10 +9,12 @@ import time
 
 from pyzotero import zotero
 
+## Logging --------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 
 
-### Get Zotero instance -------------------------------------------------------
+## Preparation of Zotero ------------------------------------------------------
+### Get Zotero instance -----------------------------------
 def Zotero_get(library_id="0", library_type="user", local=True):
     zot = zotero.Zotero(library_id, library_type, local=local)
     try:
@@ -39,7 +44,8 @@ def Zotero_get(library_id="0", library_type="user", local=True):
     raise TimeoutError("Local Zotero could not be launched.")
 
 
-###
+## Manipulation of Zotero -----------------------------------------------------
+### Make formatted list from Zotero entries ---------------
 def Zotero_makelist(zot, limit):
     libs=[]
 
@@ -83,8 +89,8 @@ def Zotero_makelist(zot, limit):
     return(libs)
 
 
-### Pull PDF from Zotero 
-# Returns the path of PDF
+### Pull PDF from Zotero ----------------------------------
+# Returns the path of dumped PDF
 def Zotero_pullPDF(zot, paper, path="data/_temp"):
     if paper['Zotero_key_PDF']:
         filename_PDF = f'{path}/{paper['Zotero_key_PDF']}.pdf'
