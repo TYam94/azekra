@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.14"
 resolution-markers = [
     "sys_platform == 'win32'",
@@ -128,6 +128,7 @@ dependencies = [
     { name = "langchain-pymupdf4llm" },
     { name = "langchain-text-splitters" },
     { name = "openai" },
+    { name = "pydantic" },
     { name = "pyzotero" },
 ]
 
@@ -139,6 +140,7 @@ requires-dist = [
     { name = "langchain-pymupdf4llm", specifier = ">=1.28.0" },
     { name = "langchain-text-splitters", specifier = ">=1.1.2" },
     { name = "openai", specifier = ">=3.22.1" },
+    { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pyzotero", specifier = ">=1.15.2" },
 ]
 

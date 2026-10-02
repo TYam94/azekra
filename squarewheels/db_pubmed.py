@@ -1,7 +1,10 @@
 
+import re
+
 from Bio import Entrez
 
 
+## Basic utilities ------------------------------------------------------------
 def PubMed_search_PMID(term, retmax=200):
     handle = Entrez.esearch(db="pubmed", term=term, retmax=retmax)
     result = Entrez.read(handle)
@@ -16,8 +19,9 @@ def _extract_abstract(article):
     for section in abstract["AbstractText"]:
         label = section.attributes.get("Label")
         text = str(section)
-        parts.append(f"{label}: {text}" if label else text)
-    return "\n".join(parts)
+        parts.append(f"{label}: {text}" if label else text)    
+    return clean_abstract_text("\n".join(parts))
+
 
 def PubMed_fetch_abstract(pmids, batch_size=100):
     results = []
@@ -30,3 +34,35 @@ def PubMed_fetch_abstract(pmids, batch_size=100):
             pmid = str(article["MedlineCitation"]["PMID"])
             results.append({"PMID": pmid, "abstract": _extract_abstract(article)})
     return results
+
+
+## Quick wrappers -------------------------------------------------------------
+### Search in PubMed with an array of query -----------------------------------
+# Just call searching function in turn.
+def PubMed_search_PMID_array(array_query, retmax=200):
+    PubMed_search_results=[]
+
+    for query in array_query:
+        search_result = PubMed_search_PMID(term=query, retmax=retmax)
+        PubMed_search_results.append({'query': query, 'result': search_result})
+
+    return PubMed_search_results
+
+
+
+
+
+def clean_abstract_text(text: str) -> str:
+    if not text:
+        return ""
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ")
+
+    text = re.sub(r"\n+", "\n", text)
+
+    text = re.sub(r"(?<!\n)\n(?!\n)", " ", text)
+
+    text = re.sub(r"[ \u3000]+", " ", text)
+
+    return text.strip()
+

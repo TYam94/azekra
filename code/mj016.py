@@ -9,10 +9,12 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pymupdf4llm import PyMuPDF4LLMLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from openai import OpenAI
+from langchain_core.documents import Document
 
 import squarewheels
 
 ## Instances ------------------------------------------------------------------
+# 
 ### Logger --------------------------------------------------------------------
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 # logging.basicConfig(level=logging.INFO)
 
 ### Zotero --------------------------------------------------------------------
-myZotero = squarewheels.Zotero_get()
+#myZotero = squarewheels.Zotero_get()
 
 ### LLM/Embedding -------------------------------------------------------------
 # lmstudio
@@ -37,7 +39,7 @@ client_LLM = OpenAI(
 client_embedding = OpenAIEmbeddings(
     base_url="http://localhost:1234/v1",
     api_key="lm-studio",
-    model=squarewheels.load_embeddingmodel("text-embedding-embeddinggemma-300m-qat"),
+    model=squarewheels.lms_load_embeddingmodel("text-embedding-embeddinggemma-300m-qat"),
     check_embedding_ctx_length=False # Set this to `False` to pass things from PyMuPDF4LLMLoader to OpenAIEmbeddings
     )
 
@@ -63,5 +65,13 @@ squarewheels.PDF_to_MMICKURR(client=client_LLM, model=None, paper_md=paper_md)
 
 
 ### From PubMed ---------------------------------------------------------------
-cands = squarewheels.PubMed_search_PMID(term="rheumatoid arthritis GWAS", retmax=20)
-cands_abst = squarewheels.PubMed_fetch_abstract(pmids=cands)
+rq_text="関節リウマチの難治性についての遺伝的素因を明らかにし、精密医療を実現したい"
+
+rq_query = squarewheels.lms_rq_to_query(client=client_LLM, model=squarewheels.lms_load_LLM(), rq=rq_text)
+
+rq_search = squarewheels.PubMed_search_PMID_array(array_query = rq_query, retmax=20)
+
+cands_abst = squarewheels.PubMed_fetch_abstract(pmids=rq_search[0]['result'])
+
+
+
