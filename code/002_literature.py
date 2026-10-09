@@ -62,7 +62,7 @@ for item in litres_absts:
 
 litres_vectorstore = Chroma.from_documents(documents=litres_docs, embedding=client_embedding)
 
-retriever = litres_vectorstore.as_retriever(search_kwargs={"k": 100})
+retriever = litres_vectorstore.as_retriever(search_type="similarity_score_threshold", search_kwargs={"score_threshold": 0.5, "k": 30})
 
 
 litres_context_docs = retriever.invoke(f"What is already known about following research question, based on most recent findings?: {rq_text}")
