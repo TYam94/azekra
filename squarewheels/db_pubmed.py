@@ -34,15 +34,20 @@ def PubMed_search_PMID(query, retmax=10000, lang="En", exc_Review=True):
 
 ### Search in array ---------------------------------------
 # Just call searching function in turn.
-def PubMed_search_PMID_array(array_query, retmax=10000, lang="En", exc_Review=True):
+def PubMed_search_PMID_array(array_query, flatten=True, retmax=10000, lang="En", exc_Review=True):
 
     PubMed_search_results=[]
+    PubMed_search_results_PMIDs=[]
 
     for query in array_query:
         search_result = PubMed_search_PMID(query=query, retmax=retmax, lang=lang, exc_Review=exc_Review)
         PubMed_search_results.append({'query': query, 'result': search_result})
+        PubMed_search_results_PMIDs.extend(search_result)
 
-    return PubMed_search_results
+    if flatten == True:
+        return list(set(PubMed_search_results_PMIDs))
+    else:
+        return PubMed_search_results
 
 
 
