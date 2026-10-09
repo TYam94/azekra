@@ -219,3 +219,5 @@ __marimo__/
 
 data/*
 !.gitignore
+
+.DS_Store

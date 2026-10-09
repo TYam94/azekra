@@ -118,7 +118,7 @@ def lms_rq_to_query(client, model, rq, n_set=3, n_keywords=3):
                 "role": "system", 
                 "content": f"""
                     Generate {n_set} different sets of {n_keywords} English keywords related to the research question.
-                    Output keywords separated by single white space, one line per each set. Do not include numbers, labels, or extra text.
+                    Output keywords separated by single white space, one line per each set. Do not include line numbers, labels, or extra text.
                 """
             },
             {
