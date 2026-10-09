@@ -1,10 +1,18 @@
 
+# Data-Base integration: Pubmed ===============================================
+
+## Dependency -----------------------------------------------------------------
+import logging
 import re
 
 from Bio import Entrez
 
+## Logging --------------------------------------------------------------------
+logger = logging.getLogger(__name__)
 
-## Basic utilities ------------------------------------------------------------
+
+## Searching ------------------------------------------------------------------
+### Basic search ------------------------------------------
 def PubMed_search_PMID(query, retmax=10000, lang="En", exc_Review=True):
 
     term = query
@@ -24,7 +32,7 @@ def PubMed_search_PMID(query, retmax=10000, lang="En", exc_Review=True):
     return result["IdList"]
 
 
-### Search in PubMed with an array of query -----------------------------------
+### Search in array ---------------------------------------
 # Just call searching function in turn.
 def PubMed_search_PMID_array(array_query, retmax=10000, lang="En", exc_Review=True):
 
@@ -37,44 +45,10 @@ def PubMed_search_PMID_array(array_query, retmax=10000, lang="En", exc_Review=Tr
     return PubMed_search_results
 
 
-def _extract_abstract(article):
-    abstract = article["MedlineCitation"]["Article"].get("Abstract")
-    if abstract is None:
-        return None
-    parts = []
-    for section in abstract["AbstractText"]:
-        label = section.attributes.get("Label")
-        text = str(section)
-        parts.append(f"{label}: {text}" if label else text)    
-    return clean_abstract_text("\n".join(parts))
 
-
-def PubMed_fetch_abstract(pmids, batch_size=100):
-    results = []
-    for i in range(0, len(pmids), batch_size):
-        batch = pmids[i:i + batch_size]
-        handle = Entrez.efetch(db="pubmed", id=",".join(batch), rettype="xml")
-        records = Entrez.read(handle)
-        handle.close()
-        for article in records["PubmedArticle"]:
-            pmid = str(article["MedlineCitation"]["PMID"])
-            year = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Year", "Unknown")
-            month = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Month", "Unknown")
-            results.append({"PMID": pmid, "yearmonth": f"{year} - {month}", "abstract": _extract_abstract(article)})
-    return results
-
-
-
-
-
-## Quick wrappers -------------------------------------------------------------
-
-
-
-
-
-
-def clean_abstract_text(text: str) -> str:
+## Fetching abstracts ---------------------------------------------------------
+### Make abstract text clean ------------------------------
+def _clean_abstract_text(text: str) -> str:
     if not text:
         return ""
 
@@ -88,3 +62,42 @@ def clean_abstract_text(text: str) -> str:
 
     return text.strip()
 
+
+### Extract abtstract from fetched XML --------------------
+def _extract_abstract(article):
+    
+    abstract = article["MedlineCitation"]["Article"].get("Abstract")
+    
+    if abstract is None:
+        return None
+    
+    parts = []
+
+    for section in abstract["AbstractText"]:
+        label = section.attributes.get("Label")
+        text = str(section)
+        parts.append(f"{label}: {text}" if label else text)
+
+    return _clean_abstract_text("\n".join(parts))
+
+
+### Fetch abstract based on PMID --------------------------
+def PubMed_fetch_abstract(pmids, batch_size=100):
+
+    results = []
+
+    for i in range(0, len(pmids), batch_size):
+
+        batch = pmids[i:i + batch_size]
+
+        handle = Entrez.efetch(db="pubmed", id=",".join(batch), rettype="xml")
+        records = Entrez.read(handle)
+        handle.close()
+
+        for article in records["PubmedArticle"]:
+            pmid = str(article["MedlineCitation"]["PMID"])
+            year = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Year", "Unknown")
+            month = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Month", "Unknown")
+            results.append({"PMID": pmid, "yearmonth": f"{year} - {month}", "abstract": _extract_abstract(article)})
+
+    return results
