@@ -87,7 +87,7 @@ def _extract_abstract(article):
 
 
 ### Fetch abstract based on PMID --------------------------
-def PubMed_fetch_abstract(pmids, batch_size=100):
+def PubMed_fetch_abstract(pmids, batch_size=1000):
 
     results = []
 
