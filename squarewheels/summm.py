@@ -168,6 +168,30 @@ def LLM_boolean(client, model, prompt_system, prompt_user):
 
 
 ## Quick wrappers -------------------------------------------------------------
+### Translation of RQ, Ja to En ---------------------------
+def rq_to_En(client, model, rq):
+
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {
+                "role": "system", 
+                "content": """
+                Please make English breif translation of following research question written in non-English language.
+                Only answer with tranlation itself, in single line. Do not include line numbers, labels, or extra text.
+                If given text is in English, pass original text through.
+                """
+                },
+            {"role": "user", "content": rq}
+            ],
+        temperature=0,
+        )
+    
+    rq_En = " ".join(response.choices[0].message.content.splitlines())
+
+    return rq_En
+
+
 ### Research question to keywords ---------------------------------------------
 def rq_to_query(client, model, rq, n_set=3, n_keywords=3):
 
@@ -192,3 +216,6 @@ def rq_to_query(client, model, rq, n_set=3, n_keywords=3):
     array_query = {line.strip() for line in response.choices[0].message.content.splitlines() if line.strip()}
 
     return(array_query)
+
+
+
