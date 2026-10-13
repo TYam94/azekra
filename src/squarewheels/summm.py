@@ -201,16 +201,18 @@ def rq_to_query(client, model, rq, n_set=3, n_keywords=3):
             {
                 "role": "system", 
                 "content": f"""
-                    Generate {n_set} different sets of {n_keywords} English keywords related to the research question.
+                    Generate {n_set} different search query composed of {n_keywords} English keywords related to proposed research context.
+                    Be sure to include at least one term that denote specific object/topic of given theme.
+                    Use full-spell rather than abbreviations whenever you are sure what the full-spell is.
                     Output keywords separated by single white space, one line per each set. Do not include line numbers, labels, or extra text.
                 """
             },
             {
                 "role": "user",
-                "content": f"【research question】{rq}"
+                "content": f"【research context】{rq}"
             }
         ],
-        temperature=0.3
+        temperature=0.2
     )
 
     array_query = {line.strip() for line in response.choices[0].message.content.splitlines() if line.strip()}
