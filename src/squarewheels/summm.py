@@ -38,7 +38,13 @@ def thread_master_to_prompt(prompt_system, thread_master, speaker_current, fmt_d
     ### Make up the thread into prompt
     for post in thread_master:
         
-        if post['speaker'] == speaker_current:
+        if post['speaker'] == "ChatCompletionMessage":
+            thread_prompt.append(post['message'])
+            continue
+        elif post['speaker'] == "tool_response":
+            thread_prompt.append(json.loads(post['message']))
+            continue
+        elif post['speaker'] == speaker_current:
             post_prompt_role = "assistant"
         else:
             post_prompt_role = "user"
@@ -200,12 +206,12 @@ def rq_to_query(client, model, rq, n_set=3, n_keywords=3):
         messages=[
             {
                 "role": "system", 
-                "content": f"""
-                    Generate {n_set} different search query composed of {n_keywords} English keywords related to proposed research context.
-                    Be sure to include at least one term that denote specific object/topic of given theme.
-                    Use full-spell rather than abbreviations whenever you are sure what the full-spell is.
-                    Output keywords separated by single white space, one line per each set. Do not include line numbers, labels, or extra text.
-                """
+                "content": (
+                    f"Generate {n_set} different search query composed of {n_keywords} English keywords related to proposed research context."
+                    "Output keywords separated by single white space, one line per each set. Do not include line numbers, labels, or extra text."
+                    "Consider using full-spell rather than abbreviations when it looks suitable as searching query."
+                    # "Be sure to include at least one term that denote specific object/topic of given theme."
+                    )
             },
             {
                 "role": "user",

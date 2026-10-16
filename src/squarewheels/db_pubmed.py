@@ -100,9 +100,32 @@ def PubMed_fetch_abstract(pmids, batch_size=1000):
         handle.close()
 
         for article in records["PubmedArticle"]:
+
+            # PMID
             pmid = str(article["MedlineCitation"]["PMID"])
-            year = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Year", "Unknown")
-            month = article["MedlineCitation"]["Article"].get("Journal").get("JournalIssue").get("PubDate").get("Month", "Unknown")
-            results.append({"PMID": pmid, "yearmonth": f"{year} - {month}", "abstract": _extract_abstract(article)})
+
+            # Publication date
+            date_str = None
+            # 1. ArticleDate
+            art_dates = article["MedlineCitation"]["Article"].get("ArticleDate", [])
+            if art_dates:
+                d = art_dates[0]
+                date_str = f"{d['Year']}-{d['Month'].zfill(2)}-{d['Day'].zfill(2)}"
+            # 2. History (PubMed/Entrez Date)
+            if not date_str:
+                history = article.get("PubmedData", {}).get("History", [])
+                for h in history:
+                    if h.attributes.get("PubStatus") in ["pubmed", "entrez"]:
+                        date_str = (f"{h['Year']}-{h['Month'].zfill(2)}-{h['Day'].zfill(2)}")
+                        break
+            # 3. JournalIssue PubDate (fallback)
+            if not date_str:
+                pub_date = article["MedlineCitation"]["Article"]["Journal"]["JournalIssue"]["PubDate"]
+                year = pub_date.get("Year", "Unknown")
+                month = pub_date.get("Month", "00").zfill(2)
+                day = pub_date.get("Day", "00").zfill(2)
+                date_str = f"{year}-{month}-{day}"
+
+            results.append({"PMID": pmid, "publication_date": date_str, "abstract": _extract_abstract(article)})
 
     return results
