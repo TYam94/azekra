@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import textwrap
 
 JST = timezone(timedelta(hours=+9), 'JST')
 
@@ -25,23 +26,56 @@ def post_clean(text: str, speaker: str) -> str:
     post = "\n".join(line.strip() for line in text.splitlines() if line.strip())
     return post
 
+def post_print(post):
+
+    if post['speaker'] == "ChatCompletionMessage":
+        
+        post_parsed = json.loads(post['message'])
+
+        print(
+            f"{post['speaker']} ({post['datetime']})\n"
+            f"  reasoning_content:\n{textwrap.indent(post_parsed['reasoning_content'], "    ")}"
+            )
+        
+        if post_parsed.get("tool_calls"):
+            print(
+                f"{post['speaker']} ({post['datetime']})\n"
+                f"  tool_calls:\n{textwrap.indent(json.dumps(post_parsed.get("tool_calls")), "    ")}"
+                )
+
+    elif post['speaker'] == "tool_response":
+        post_parsed = json.loads(post['message'])
+        print(
+            f"{post['speaker']} ({post['datetime']})\n"
+            f"{textwrap.indent(
+                (   f"name: {post_parsed.get("name")}\n"
+                    f"tool_call_id: {post_parsed.get("tool_call_id")}\n"
+                    f"content: {textwrap.shorten(post_parsed.get("content"), width=60, placeholder="...")}"),
+                "  ")}"
+            )
+    else:
+        print(f"{post['speaker']} ({post['datetime']})\n{textwrap.indent(post['message'], "  ")}")
+
 
 ### Make prompt-thread from the master-thread ---------------------------------
 
 # fmt_dialog: Whether the output should be formatted in dialog style.
 #             When true, speakers are denoted like "<speaker>: <post>" for multi-agent run.
 #             When False, speakers are not denoted. Useful in one-to-one conversation.
-def thread_master_to_prompt(prompt_system, thread_master, speaker_current, fmt_dialog=True):
+def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, fmt_dialog=False):
+    thread_prompt = []
+
     # Make system instruction
-    thread_prompt = [{"role": "system", "content": prompt_system}]
+    if prompt_system:
+        thread_prompt.append({"role": "system", "content": prompt_system})
 
     ### Make up the thread into prompt
     for post in thread_master:
         
-        if post['speaker'] == "ChatCompletionMessage":
-            thread_prompt.append(post['message'])
+        if post['speaker'] == "system":
+            thread_prompt.append({"role": "system", "content": post['message']})
             continue
-        elif post['speaker'] == "tool_response":
+        if post['speaker'] == "ChatCompletionMessage" or post['speaker'] == "tool_response":
             thread_prompt.append(json.loads(post['message']))
             continue
         elif post['speaker'] == speaker_current:
@@ -58,9 +92,21 @@ def thread_master_to_prompt(prompt_system, thread_master, speaker_current, fmt_d
 
     return thread_prompt
 
+def thread_master_append(thread_master, speaker, speaker_message):
 
+    speaker_post = {
+        'datetime': datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S'),
+        'speaker': speaker,
+        'message': speaker_message,
+        }
+
+    thread_master.append(speaker_post)
+    post_print(speaker_post)
+
+    return thread_master
 
 ## Runnning threads ===========================================================
+
 
 ### Ask LLM a series of questions on one theme --------------------------------
 # client: OpenAI-compatible LLM client, which should have `client.chat.completions.create()` method.

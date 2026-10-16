@@ -2,7 +2,7 @@
 from .cm_zotero import Zotero_get, Zotero_makelist, Zotero_pullPDF
 from .db_pubmed import PubMed_fetch_abstract, PubMed_search_PMID, PubMed_search_PMID_array
 from .lm_lmstudio import lms_load_embeddingmodel, lms_load_LLM
-from .summm import PDF_to_MMICKURR, rq_to_query,rq_to_En,thread_master_to_prompt,post_clean
+from .summm import PDF_to_MMICKURR, rq_to_query,rq_to_En,thread_master_to_prompt,post_clean,post_print,thread_master_append
 
 __all__ = [
     "PDF_to_MMICKURR",
@@ -17,5 +17,7 @@ __all__ = [
     "PubMed_search_PMID_array",
     "rq_to_En",
     "thread_master_to_prompt",
-    "post_clean"
+    "post_clean",
+    "post_print",
+    "thread_master_append"
     ]
