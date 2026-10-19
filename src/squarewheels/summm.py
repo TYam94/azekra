@@ -416,6 +416,144 @@ def run_litres_search_PubMed(
     return litres_searched
 
 
+### Answering with literature vector-store (RAG) ------------------------------
+def run_litres_vectorstore(
+    client,
+    model,
+    research_context,
+    vectorstore,
+    request = "Please write introduction session for that context. I assume 10~20 citations must be required.",
+    thread_maxlen = 100,
+    ):
+    """Answering with literature vector-store (RAG)
+
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        research_context: Research context passed to system prompt.
+        vectorstore: Vector-store of literatures (e.g. Chroma). Each document should have 'PMID' and 'publication_date' in its metadata.
+        request: User's request to the assistant.
+        thread_maxlen: Maximum number of rounds.
+
+    Returns:
+        thread_master: Thread, with LLM response appended.
+    """
+    #### Compose tools for LLM ----------------------------
+    def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
+
+        # Generate retriever dynamically with given threshold
+        retriever = vectorstore.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={
+                "score_threshold": score_threshold,
+                "k": 50,
+            },
+        )
+
+        docs = retriever.invoke(query)
+
+        if not docs:
+            return f"No entry had similarity score above {score_threshold}"
+        else:
+            docs_md = ""
+            for doc in docs:
+                docs_md = (
+                    f"{docs_md}"
+                    f"# PMID: {doc.metadata["PMID"]} \n"
+                    f"## Publication_date: {doc.metadata["publication_date"]} \n"
+                    f"{doc.page_content}\n\n"
+                )
+            return docs_md
+
+    LLM_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "_tool_litres_vectorstore_search",
+                "description": (
+                    "Function to search literature database. "
+                    "Threshold of similarity can be adjusted via `score_threshold`. "
+                    "Database is in English, so input query in English. "
+                    ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Statement/Keywords to search."
+                            },
+                        "score_threshold": {
+                            "type": "number",
+                            "description": (
+                                "Threshold of similarity. Default is 0.5. "
+                                "Make it higher (0.7~) to obtain more narrow-ranged results. "
+                                "Make it lower (~0.3) to obtain more broad results. "
+                                )
+                            },
+                    },
+                    "required": ["query"],
+                    # "score_threshold" is optional
+                },
+            },
+        }
+    ]
+
+    LLM_tool_functions = {"_tool_litres_vectorstore_search": _tool_litres_vectorstore_search}
+
+    #### Prepare the thread -------------------------------
+    thread_master = thread_master_append(
+        thread_master=[],
+        speaker="system",
+        speaker_message=(
+            "You are working as a literature research assistant. \n"
+            "Respond to the user's request BASED ON database search using given tools. \n"
+            "Do not proceed to answering before you get enough amount of citations. \n"
+            "If single search is not enough, **MAKE MULTIPLE TOOL CALLS to refine your answer**. \n"
+            "Write out your citations explicitly in-line with identifier in database, like PMID. \n"
+            "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
+            "\n"
+            f"[Context]\n{research_context}\n"
+            "\n"
+            "Please keep in mind following tips: \n"
+            " * Adjust `score_threshold` (Threshold of similarity) properly. If there are little citations, do make lower the threshold. \n"
+            " * Consider break down elements and search subset of them separately. \n"
+            " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
+        )
+    )
+
+    thread_master = thread_master_append(
+        thread_master,
+        speaker="user",
+        speaker_message=request
+    )
+
+    #### Run the thread -----------------------------------
+    thread_exit = False
+    for i in range(thread_maxlen):
+
+        thread_master = thread_create_response(
+            client=client,
+            model=model,
+            thread_master=thread_master,
+            speaker_current="assistant",
+            fmt_dialog=False,
+            tools=LLM_tools,
+            tool_choice="auto",
+            tool_functions=LLM_tool_functions,
+            temperature=0
+        )
+
+        # If exit flag was given,
+        for post in thread_master:
+            if "(There was no response)" in post['message']:
+                thread_exit = True
+                break
+
+        if thread_exit == True: break
+
+    return thread_master
+
+
 
 
 
