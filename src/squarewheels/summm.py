@@ -50,7 +50,7 @@ def post_print(post):
             f"{textwrap.indent(
                 (   f"name: {post_parsed.get("name")}\n"
                     f"tool_call_id: {post_parsed.get("tool_call_id")}\n"
-                    f"content: {textwrap.shorten(post_parsed.get("content"), width=60, placeholder="...")}"),
+                    f"content: {textwrap.shorten(post_parsed.get("content"), width=60, placeholder=" ...")}"),
                 "  ")}"
             )
     else:
