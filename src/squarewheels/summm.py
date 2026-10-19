@@ -6,6 +6,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import textwrap
 
+from .cm_zotero import Zotero_get, Zotero_makelist, Zotero_pullPDF
+from .db_pubmed import PubMed_fetch_abstracts, PubMed_search_PMID, PubMed_search_PMID_array,PubMed_save_abstracts
+from .lm_lmstudio import lms_load_embeddingmodel, lms_load_LLM
+
 JST = timezone(timedelta(hours=+9), 'JST')
 
 MODULE_DIR = Path(__file__).resolve().parent
@@ -21,13 +25,33 @@ logger = logging.getLogger(__name__)
 ## Utilities for threads/posts ================================================
 ### Clean the text into tidy post ---------------------------------------------
 def post_clean(text: str, speaker: str) -> str:
+    """Clean the text into tidy post.
+    Removes heading speaker name (added by LLM) automatically, and, flatten the text.
+    Mainly for multi-agent thread.
+
+    Args:
+        text: Text to be processed.
+        speaker: The name of speaker to remove.
+
+    Returns:
+        Heading speaker name removed, flatten text.
+    """
     text = text.strip()
     text = re.sub(rf"\A\s*(?:{speaker}\s*:\s*)+", "", text)
     post = "\n".join(line.strip() for line in text.splitlines() if line.strip())
     return post
 
-def post_print(post):
 
+### Print the post to output --------------------------------------------------
+def post_print(post: str):
+    """Print the post to output.
+
+    Args:
+        post: The post to print. It must be a dict with keys 'speaker', 'datetime', and 'message'.
+
+    Returns:
+        None
+    """
     if post['speaker'] == "ChatCompletionMessage":
         
         post_parsed = json.loads(post['message'])
@@ -58,11 +82,21 @@ def post_print(post):
 
 
 ### Make prompt-thread from the master-thread ---------------------------------
-
-# fmt_dialog: Whether the output should be formatted in dialog style.
-#             When true, speakers are denoted like "<speaker>: <post>" for multi-agent run.
-#             When False, speakers are not denoted. Useful in one-to-one conversation.
 def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, fmt_dialog=False):
+    """Make prompt from thread.
+
+    Args:
+        thread_master: Master thread.
+        speaker_current: The name of current speaker to whom you want to pass converted prompt.
+        prompt_system: If given, this text will be used as system prompt.
+        fmt_dialog: Whether the output should be formatted in dialog style.
+            When False, speakers are not denoted. Suitable for one-to-one (one user and one assistant) thread.
+            When true, speakers are denoted like "<speaker>: <post>". This is for multi-agent thread.
+
+    Returns:
+        thread_prompt: Generated prompt (messages) suitable for LLM.
+
+    """
     thread_prompt = []
 
     # Make system instruction
@@ -71,7 +105,6 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
 
     ### Make up the thread into prompt
     for post in thread_master:
-        
         if post['speaker'] == "system":
             thread_prompt.append({"role": "system", "content": post['message']})
             continue
@@ -92,8 +125,22 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
 
     return thread_prompt
 
-def thread_master_append(thread_master, speaker, speaker_message):
 
+### Add the speaker's message to the thread -----------------------------------
+def thread_master_append(thread_master, speaker, speaker_message, print=True):
+    """Add the speaker's message to the thread.
+    It automatically add the time (in JST) and given speaker's name.
+
+    Args:
+        thread_master: Thread to append.
+        speaker: The name of the speaker.
+        speaker_message: Message to add.
+        print: Automatically print the message into output when True.
+
+    Returns:
+        thread_master: Extended thread.
+
+    """
     speaker_post = {
         'datetime': datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S'),
         'speaker': speaker,
@@ -101,11 +148,276 @@ def thread_master_append(thread_master, speaker, speaker_message):
         }
 
     thread_master.append(speaker_post)
-    post_print(speaker_post)
+
+    if print: post_print(speaker_post)
 
     return thread_master
 
-## Runnning threads ===========================================================
+
+### Create response to the thread with LLM ------------------------------------
+def thread_create_response(
+    client, 
+    model, 
+    speaker_current, 
+    thread_master, 
+    fmt_dialog=False,
+    string_noresponse = "(There was no response)",
+    tools = None, 
+    tool_functions = None, 
+    tool_choice = None, 
+    **kwargs
+    ):
+    """Create response to the thread with LLM.
+
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        speaker_current: Name of the speaker.
+        thread_master: Master thread.
+        tools: Tools for LLM. Passed to `tools` in `client.chat.completions.create()`.
+        tool_functions: Tool functions. Names and contents should be compatible with `tools`. Ideally, should return a string (MD is okay).
+        tool_choice: Tool choice. Passed to tool_choice` in `client.chat.completions.create()`.
+        **kwargs: Any other parameters you want to pass to `client.chat.completions.create()`.
+
+    Returns:
+        Thread, with LLM response appended.
+    """
+    # Construct a prompt from master-thread
+    thread_prompt = thread_master_to_prompt(
+        thread_master=thread_master,
+        speaker_current=speaker_current,
+        fmt_dialog=False
+    )
+
+    # Generate response
+    speaker_response = client.chat.completions.create(
+        model=model,
+        messages=thread_prompt,
+        tools=tools,
+        tool_choice=tool_choice,
+        **kwargs
+    )
+
+    speaker_response_message = speaker_response.choices[0].message
+    logger.debug(speaker_response_message)
+
+    # If tool is called, 
+    if speaker_response_message.tool_calls:
+
+        # Record the message into the thread
+        thread_master_append(
+            thread_master, 
+            speaker="ChatCompletionMessage",
+            speaker_message=speaker_response_message.model_dump_json(),
+        )
+        
+        # Execute the calls
+        for tool_call in speaker_response_message.tool_calls:
+
+            # Parse and run the call
+            tool_response = tool_functions[tool_call.function.name](**json.loads(tool_call.function.arguments))
+
+            # Record the result
+            thread_master_append(
+                thread_master, 
+                speaker="tool_response", 
+                speaker_message=json.dumps({
+                    "tool_call_id": tool_call.id, 
+                    "role": "tool", 
+                    "name": tool_call.function.name, 
+                    "content": tool_response
+                }),
+            )
+
+    # If tools is not called and the reply is generated, 
+    elif speaker_response_message.content:
+        thread_master_append(
+            thread_master, 
+            speaker=speaker_current,
+            speaker_message=post_clean(speaker_response_message.content, speaker_current),
+        )
+
+    # If LLM did not call a tool nor speak,
+    else:
+        thread_master_append(
+            thread_master, 
+            speaker=speaker_current,
+            speaker_message=string_noresponse,
+        )
+
+    return thread_master
+
+
+## Running pre-defined thread =================================================
+### Searching PubMed with LLM -------------------------------------------------
+def run_litres_search_PubMed(
+    client,
+    model,
+    research_context,
+    litres_n_minimum = 100, 
+    litres_n_maximum = 10000, 
+    litres_i_minimum = 3, 
+    litres_i_maximum = 20,
+    litres_gain_minimum = 0.05
+    ):
+    """Searching PubMed with LLM
+    """
+    # Literature research managers
+    litres_searched = []
+
+    ### Compose tools for LLM -------------------------------------------------
+    def _tool_PubMed_search_PMID_array(array_query: str):
+        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=litres_n_maximum, flatten=True)
+        results = ", ".join(litres_search)
+        return results 
+
+    LLM_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "_tool_PubMed_search_PMID_array",
+                "description": (
+                    "Function to search Pubmed. "
+                    "Takes an array of query (set of terms) and run these queries one by one. "
+                    "Returns unique set of PMID from conducted searches. "
+                    "Database is in English, so input query in English. "
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "array_query": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Array of keywords to search. Not a phrase, but a set of temrs. In English."
+                        },
+                    },
+                    "required": ["array_query"],
+                },
+            },
+        }
+    ]
+
+    LLM_tool_functions = {"_tool_PubMed_search_PMID_array": _tool_PubMed_search_PMID_array}
+
+
+    ### Prepare the thread ----------------------------------------------------
+    thread_master = thread_master_append(
+        thread_master=[],
+        speaker="system",
+        speaker_message=(
+            "You are working as a literature research assistant. \n"
+            "Your current target is to gather tons of literature that can be related to given context. \n"
+            "Continue search as long as user requests. \n"
+            "Start from specific search query, and then make scope broader when user requests more information. \n"
+            "\n"
+            f"[Context]\n{research_context}\n"
+            "\n"
+            "Please keep in mind following tips: \n"
+            " * Be sure not to input a phrase but a set of terms as query. \n"
+            " * Consider break down elements and search subset of them separately. \n"
+            " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
+            " * It can help to replacing too strict or specific terms to more broad-sensed expression. \n"
+        )
+    )
+
+    thread_master = thread_master_append(
+        thread_master,
+        speaker="user",
+        speaker_message="Please search for the literatures related to the topic."
+    )
+
+    # Automatic user response -------------------------------------------------
+    def _user_automatic():
+        user_message = f"This is round #{(i + 1)}. You have found {len(litres_searched)} literatures. "
+
+        try:
+            user_message = (
+                f"{user_message}" 
+                f"Newly added: {litres_gain} ({(100 * (litres_gain / len(litres_searched))):.1f}%). "
+            )
+        except ZeroDivisionError:
+            pass
+
+        if len(litres_searched) < litres_n_minimum:
+            user_message = (
+                f"{user_message} \n"
+                f"It's not enough. I want at least {litres_n_minimum}. Please continue to search for literatures."
+            )
+        elif len(litres_searched) < litres_n_maximum and (i + 1) < litres_i_minimum:
+            user_message = (
+                f"{user_message} \n"
+                "It looks fine, but I want peripheral informations too. Please make another search with wider scope."
+            )
+        elif len(litres_searched) < litres_n_maximum and (litres_gain / len(litres_searched)) > litres_gain_minimum:
+            user_message = (
+                f"{user_message} \n"
+                "There might be more literature to get. Please continue to search for more a bit."
+            )            
+        else:
+            user_message = (
+                f"{user_message} \n"
+                "It looks like enough search was done. Let's finish."
+            )
+
+        return user_message
+
+    ### Run the thread --------------------------------------------------------
+    thread_exit = False
+    for i in range(litres_i_maximum):
+        # Count current records
+        litres_gain = len(litres_searched)
+
+        # Create next response
+        thread_master = thread_create_response(
+            client=client,
+            model=model,
+            thread_master=thread_master,
+            speaker_current="assistant",
+            fmt_dialog=False,
+            tools=LLM_tools,
+            tool_choice="auto",
+            tool_functions=LLM_tool_functions,
+        )
+
+        # Correct search results
+        for post in thread_master:
+            if post['speaker'] == "tool_response":
+                post_parsed = json.loads(post['message'])
+                if post_parsed.get("name") == "_tool_PubMed_search_PMID_array":
+                    litres_searched.extend(post_parsed.get("content").split(", "))
+
+        # De-duplicate
+        litres_searched = list(set(litres_searched))
+
+        # Count updated records
+        litres_gain = len(litres_searched) - litres_gain
+
+        # User's response (automatic)
+        thread_master = thread_master_append(
+            thread_master, 
+            speaker="user",
+            speaker_message=_user_automatic()
+        )
+
+        # If exit flag was given, 
+        for post in thread_master:
+            if post['speaker'] == "user" and "Let's finish." in post['message']:
+                thread_exit = True
+                break
+
+        if thread_exit == True: 
+            thread_master = thread_master_append(
+                thread_master, 
+                speaker="user",
+                speaker_message= ", ".join(litres_searched)
+            )
+            break
+
+    return litres_searched
+
+
+
+
 
 
 ### Ask LLM a series of questions on one theme --------------------------------
@@ -162,7 +474,18 @@ def run_theme_and_questions(client, model, theme, qset):
 
 
 
-## Wrappers
+
+
+
+
+
+
+
+
+
+
+
+
 ### 
 def PDF_to_MMICKURR(client, model, paper_md, qset_path=CONFIG_PATH):
 
