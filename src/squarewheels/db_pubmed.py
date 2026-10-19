@@ -89,12 +89,14 @@ def _extract_abstract(article):
 
 
 ### Fetch abstract based on PMID --------------------------
-def PubMed_fetch_abstracts(pmids, batch_size=1000, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"):
+def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json", batch_size=1000):
 
+    # Containers
     results = []
     pmids_fetch = []
-
-    # Load abstracts already stored
+    pmids_fetch_absts = []
+    
+    # Load stored abstracts from PubMed (if exist)
     file_path = Path(file_PubMed_abstracts)
     if file_path.exists():
         with open(file_path, "r", encoding="utf-8") as f:
@@ -102,7 +104,7 @@ def PubMed_fetch_abstracts(pmids, batch_size=1000, file_PubMed_abstracts = "data
     else:
         PubMed_stored_absts = []
 
-    # Pick up
+    # Pick up stored ones
     for pmid in pmids:
         for item in PubMed_stored_absts:
             if item.get("PMID") == pmid:
@@ -111,8 +113,9 @@ def PubMed_fetch_abstracts(pmids, batch_size=1000, file_PubMed_abstracts = "data
         else:
             pmids_fetch.append(pmid)
 
-    # Run Entrez.efetch
+    # Run Entrez.efetch for non-found literatures if such cases exist
     if len(pmids_fetch) > 0:
+        # Batch run
         for i in range(0, len(pmids_fetch), batch_size):
 
             batch = pmids_fetch[i:i + batch_size]
@@ -148,8 +151,19 @@ def PubMed_fetch_abstracts(pmids, batch_size=1000, file_PubMed_abstracts = "data
                     day = pub_date.get("Day", "00").zfill(2)
                     date_str = f"{year}-{month}-{day}"
 
-                results.append({"PMID": pmid, "publication_date": date_str, "abstract": _extract_abstract(article)})
+                pmids_fetch_absts.append({"PMID": pmid, "publication_date": date_str, "abstract": _extract_abstract(article)})
 
+        # Add them to the results and store
+        results.extend(pmids_fetch_absts)
+        PubMed_stored_absts.extend(pmids_fetch_absts)
+
+    # Save the store automatically
+    if len(PubMed_stored_absts) > 0:
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(PubMed_stored_absts, f, indent=4, ensure_ascii=False)
+
+    # Return the result
     return results
 
 
