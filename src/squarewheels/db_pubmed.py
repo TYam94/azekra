@@ -2,8 +2,10 @@
 # Data-Base integration: Pubmed ===============================================
 
 ## Dependency -----------------------------------------------------------------
+import json
 import logging
 import re
+from pathlib import Path
 
 from Bio import Entrez
 
@@ -87,45 +89,76 @@ def _extract_abstract(article):
 
 
 ### Fetch abstract based on PMID --------------------------
-def PubMed_fetch_abstract(pmids, batch_size=1000):
+def PubMed_fetch_abstracts(pmids, batch_size=1000, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"):
 
     results = []
+    pmids_fetch = []
 
-    for i in range(0, len(pmids), batch_size):
+    # Load abstracts already stored
+    file_path = Path(file_PubMed_abstracts)
+    if file_path.exists():
+        with open(file_path, "r", encoding="utf-8") as f:
+            PubMed_stored_absts = json.load(f)
+    else:
+        PubMed_stored_absts = []
 
-        batch = pmids[i:i + batch_size]
+    # Pick up
+    for pmid in pmids:
+        for item in PubMed_stored_absts:
+            if item.get("PMID") == pmid:
+                results.append(item)
+                break
+        else:
+            pmids_fetch.append(pmid)
 
-        handle = Entrez.efetch(db="pubmed", id=",".join(batch), rettype="xml")
-        records = Entrez.read(handle)
-        handle.close()
+    # Run Entrez.efetch
+    if len(pmids_fetch) > 0:
+        for i in range(0, len(pmids_fetch), batch_size):
 
-        for article in records["PubmedArticle"]:
+            batch = pmids_fetch[i:i + batch_size]
 
-            # PMID
-            pmid = str(article["MedlineCitation"]["PMID"])
+            handle = Entrez.efetch(db="pubmed", id=",".join(batch), rettype="xml")
+            records = Entrez.read(handle)
+            handle.close()
 
-            # Publication date
-            date_str = None
-            # 1. ArticleDate
-            art_dates = article["MedlineCitation"]["Article"].get("ArticleDate", [])
-            if art_dates:
-                d = art_dates[0]
-                date_str = f"{d['Year']}-{d['Month'].zfill(2)}-{d['Day'].zfill(2)}"
-            # 2. History (PubMed/Entrez Date)
-            if not date_str:
-                history = article.get("PubmedData", {}).get("History", [])
-                for h in history:
-                    if h.attributes.get("PubStatus") in ["pubmed", "entrez"]:
-                        date_str = (f"{h['Year']}-{h['Month'].zfill(2)}-{h['Day'].zfill(2)}")
-                        break
-            # 3. JournalIssue PubDate (fallback)
-            if not date_str:
-                pub_date = article["MedlineCitation"]["Article"]["Journal"]["JournalIssue"]["PubDate"]
-                year = pub_date.get("Year", "Unknown")
-                month = pub_date.get("Month", "00").zfill(2)
-                day = pub_date.get("Day", "00").zfill(2)
-                date_str = f"{year}-{month}-{day}"
+            for article in records["PubmedArticle"]:
 
-            results.append({"PMID": pmid, "publication_date": date_str, "abstract": _extract_abstract(article)})
+                # PMID
+                pmid = str(article["MedlineCitation"]["PMID"])
+
+                # Publication date
+                date_str = None
+                # 1. ArticleDate
+                art_dates = article["MedlineCitation"]["Article"].get("ArticleDate", [])
+                if art_dates:
+                    d = art_dates[0]
+                    date_str = f"{d['Year']}-{d['Month'].zfill(2)}-{d['Day'].zfill(2)}"
+                # 2. History (PubMed/Entrez Date)
+                if not date_str:
+                    history = article.get("PubmedData", {}).get("History", [])
+                    for h in history:
+                        if h.attributes.get("PubStatus") in ["pubmed", "entrez"]:
+                            date_str = (f"{h['Year']}-{h['Month'].zfill(2)}-{h['Day'].zfill(2)}")
+                            break
+                # 3. JournalIssue PubDate (fallback)
+                if not date_str:
+                    pub_date = article["MedlineCitation"]["Article"]["Journal"]["JournalIssue"]["PubDate"]
+                    year = pub_date.get("Year", "Unknown")
+                    month = pub_date.get("Month", "00").zfill(2)
+                    day = pub_date.get("Day", "00").zfill(2)
+                    date_str = f"{year}-{month}-{day}"
+
+                results.append({"PMID": pmid, "publication_date": date_str, "abstract": _extract_abstract(article)})
 
     return results
+
+
+def PubMed_save_abstracts(litres_absts, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"):
+
+    file_path = Path(file_PubMed_abstracts)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(litres_absts, f, indent=4, ensure_ascii=False)
+
+    return file_path
