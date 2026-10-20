@@ -34,11 +34,13 @@ def run_litres_search_PubMed(
 
     ### Compose tools for LLM -------------------------------------------------
     # PMIDs are stored into litres_round directly; the LLM gets only a summary of counts.
+    # Each query takes at most litres_n_maximum PMIDs, in the order of relevance (Best Match);
+    # a query with more hits (too broad) keeps only the top of them.
     # "new" of each query is counted against PMIDs known before this call, so overlaps
     # between queries of the same call are counted in each of them. The top-level "new"
     # is the de-duplicated count for the whole call.
     def _tool_PubMed_search_PMID_array(array_query: str):
-        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=10000, flatten=False)
+        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=litres_n_maximum, flatten=False, sort="relevance")
 
         litres_known = set(litres_searched) | litres_round
         litres_call = set()
@@ -46,9 +48,10 @@ def run_litres_search_PubMed(
 
         for item in litres_search:
             pmids = set(item['result'])
-            summary = {"query": item['query'], "hits": len(pmids), "new": len(pmids - litres_known)}
-            if len(pmids) >= 10000:
-                summary["note"] = "10000 or more hits (truncated). Too broad."
+            summary = {"query": item['query'], "hits": item['count'], "new": len(pmids - litres_known)}
+            if item['count'] > len(item['result']):
+                summary["kept"] = len(item['result'])
+                summary["note"] = f"Too broad: only the top {len(item['result'])} by relevance were kept."
             per_query.append(summary)
             litres_call |= pmids
 
@@ -56,7 +59,7 @@ def run_litres_search_PubMed(
 
         return json.dumps({
             "per_query": per_query,
-            "total_hits": len(litres_call),
+            "total_kept": len(litres_call),
             "new": len(litres_call - litres_known),
             "already_found": len(litres_call & litres_known),
         })
@@ -69,8 +72,9 @@ def run_litres_search_PubMed(
                 "description": (
                     "Function to search Pubmed. "
                     "Takes an array of query (set of terms) and run these queries one by one. "
-                    "Returns the number of hits for each query and for all queries together, "
+                    "Returns the number of hits for each query and the number of literatures kept for all queries together, "
                     "with how many of them are new (not found before) and already found. "
+                    "For a too broad query, only the most relevant ones are kept. "
                     "Database is in English, so input query in English. "
                 ),
                 "parameters": {
@@ -136,22 +140,11 @@ def run_litres_search_PubMed(
 
     def _user_automatic_message():
 
-        # A single search reached the maximum: the query is too broad (results discarded)
-        if litres_status == "too_broad":
+        # Accumulated results reached the maximum: enough (results of this round are added)
+        if len(litres_searched) >= litres_n_maximum:
             return (
-                f"This is round #{(i + 1)}. Your last search alone returned {len(litres_round)} literatures, "
-                f"which reaches the limit of {litres_n_maximum}. These results were discarded; "
-                f"you still have {len(litres_searched)} literatures. \n"
-                "The query is too broad. Please make it narrower: use more specific terms, "
-                "combine terms related to the core of the topic, and avoid overly general words."
-            )
-
-        # Accumulated results reached the maximum: enough (results of this round not added)
-        if litres_status == "full":
-            return (
-                f"This is round #{(i + 1)}. Adding your last search would bring the total to {len(litres_candidate)} literatures, "
-                f"which reaches the limit of {litres_n_maximum}. These results were not added; "
-                f"you have {len(litres_searched)} literatures. \n"
+                f"This is round #{(i + 1)}. You have found {len(litres_searched)} literatures. "
+                f"Newly added: {litres_gain}. This reaches the limit of {litres_n_maximum}. \n"
                 "That is enough. Let's finish."
             )
 
@@ -206,17 +199,9 @@ def run_litres_search_PubMed(
             tool_functions=LLM_tool_functions,
         )
 
-        # Add search results of this round (de-duplicated), unless the maximum is reached
-        #   too_broad: this round alone reaches the maximum -> discard, ask for narrower query
-        #   full:      the total reaches the maximum        -> discard, finish with current results
-        litres_candidate = set(litres_searched) | litres_round
-        if len(litres_round) >= litres_n_maximum:
-            litres_status = "too_broad"
-        elif len(litres_candidate) >= litres_n_maximum:
-            litres_status = "full"
-        else:
-            litres_status = None
-            litres_searched = list(litres_candidate)
+        # Add search results of this round (de-duplicated).
+        # When the total reaches litres_n_maximum, they are still added and the search finishes.
+        litres_searched = list(set(litres_searched) | litres_round)
 
         # Count updated records
         litres_gain = len(litres_searched) - litres_gain

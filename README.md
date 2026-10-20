@@ -151,8 +151,9 @@ What happens:
 
 1. LM Studio is started and the models are loaded.
 2. The LLM searches PubMed repeatedly, broadening its queries until enough papers are found.
-   A search that alone hits the upper limit (3,000 by default) is discarded and the LLM is asked for narrower queries;
-   when the accumulated results reach the limit, the search ends there.
+   Each query takes at most the upper limit (3,000 by default) of papers, the most relevant ones first (PubMed's Best Match);
+   for a too broad query, only those top papers are kept and the LLM is told so.
+   When the accumulated results reach the limit, that round is still added and the search ends there.
 3. Abstracts are fetched from PubMed (already-fetched ones are reused from the local cache).
 4. New abstracts are added to the local vector database (Chroma).
 5. The LLM searches that database (the whole database, including abstracts collected in earlier runs) and writes the requested text with PMID citations.
