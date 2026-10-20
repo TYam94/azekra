@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 
 ## Setting --------------------------------------------------------------------
 ### Set Entrez identity -----------------------------------
-# NCBI requires an email address for E-utilities. api_key is optional (raises the rate limit).
+# NCBI asks for an email address for E-utilities (works without it, but recommended). api_key is optional (raises the rate limit).
 def PubMed_set_Entrez(email, api_key=None):
 
-    if not email:
-        raise ValueError("Email for NCBI E-utilities is not given. Set it in config.toml [PubMed].")
-
-    Entrez.email = email
+    if email:
+        Entrez.email = email
+    else:
+        logger.warning("Email for NCBI E-utilities is not given. Setting it in config.toml [PubMed] is recommended.")
 
     if api_key:
         Entrez.api_key = api_key
