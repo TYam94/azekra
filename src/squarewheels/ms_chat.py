@@ -53,16 +53,16 @@ def post_print(post: str):
         
         post_parsed = json.loads(post['message'])
 
-        print(
-            f"[{post['speaker']} | {post['datetime']}]\n"
-            f"  reasoning_content:\n{textwrap.indent(post_parsed['reasoning_content'], "    ")}"
-            )
-        
+        text = f"[{post['speaker']} | {post['datetime']}]"
+
+        # reasoning_content is not returned by some models
+        if post_parsed.get("reasoning_content"):
+            text = f"{text}\n  reasoning_content:\n{textwrap.indent(post_parsed.get("reasoning_content"), "    ")}"
+
         if post_parsed.get("tool_calls"):
-            print(
-                f"[{post['speaker']} | {post['datetime']}]\n"
-                f"  tool_calls:\n{textwrap.indent(json.dumps(post_parsed.get("tool_calls")), "    ")}"
-                )
+            text = f"{text}\n  tool_calls:\n{textwrap.indent(json.dumps(post_parsed.get("tool_calls")), "    ")}"
+
+        print(text)
 
     elif post['speaker'] == "tool_response":
         post_parsed = json.loads(post['message'])
