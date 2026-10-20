@@ -26,7 +26,7 @@ Everything except PubMed access runs on your own computer through [LM Studio](ht
 | [LM Studio](https://lmstudio.ai/) (with the `lms` command) | Yes | Runs the LLM and the embedding model locally |
 | An LLM and an embedding model in LM Studio | Yes | Defaults: `google/gemma-4-e2b`, `text-embedding-embeddinggemma-300m-qat` |
 | Internet connection | Yes | For PubMed (NCBI E-utilities) and the first download of models/packages |
-| [Zotero](https://www.zotero.org/) 9 or later | Only for `001_fromZotero.py` | Must be running with local API enabled (see below) |
+| [Zotero](https://www.zotero.org/) 9 or later | Only for `002_fromZotero.py` | Must be running with local API enabled (see below) |
 
 A local LLM needs a reasonably powerful machine. The default `gemma-4-e2b` is small and
 runs on most recent PCs; larger models need more memory (and preferably a GPU).
@@ -95,7 +95,7 @@ cp config.example.toml config.toml
 | `[lmstudio] base_url`, `api_key` | Leave as is unless you changed LM Studio's server port |
 | `[PubMed] email` | Your email address. NCBI asks for it; without it you get a warning (it still works) |
 | `[PubMed] api_key` | Optional. An [NCBI API key](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Coming_in_December_2018_API_Key) raises the request rate limit |
-| `[paths]` | Where data is stored, and the default input file of `002_literature.py` (`litres_input`). Relative paths are resolved from the folder of `config.toml` |
+| `[paths]` | Where data is stored, and the default input file of `001_literature.py` (`litres_input`). Relative paths are resolved from the folder of `config.toml` |
 
 ### 5. (Only for Zotero features) Enable Zotero's local API
 
@@ -114,15 +114,7 @@ Zotero must be running when you use the Zotero features (the script tries to sta
 Select the interpreter in `.venv/` of this project (`.venv\Scripts\python.exe` on Windows, `.venv/bin/python` on macOS/Linux).
 Run with the project folder (or any folder inside it) as the working directory, so that `config.toml` is found.
 
-### Paper summary from Zotero: `code/001_fromZotero.py`
-
-Pulls a PDF from your local Zotero library, converts it to text, and asks the LLM a fixed set of questions about it.
-
-```bash
-uv run python code/001_fromZotero.py
-```
-
-### Literature research: `code/002_literature.py`
+### Literature research: `code/001_literature.py`
 
 1. Write your input file. The sample `data/user/litres_sample.toml` is used by default; copy it (e.g. to `data/user/litres.toml`) and edit:
    ```toml
@@ -141,16 +133,16 @@ uv run python code/001_fromZotero.py
    Then point `[paths] litres_input` in `config.toml` to your file, or use one of the other ways below.
 2. Run it from the project folder:
    ```bash
-   uv run python code/002_literature.py
+   uv run python code/001_literature.py
    ```
 
 Other ways to give the input (handy when running from an IDE):
 
 - **Another input file, from the command line**: pass any `.toml` file as an argument.
   ```bash
-  uv run python code/002_literature.py data/user/another_topic.toml
+  uv run python code/001_literature.py data/user/another_topic.toml
   ```
-- **Another input file, by editing the script**: set `input_file` in the `Input (optional)` section at the top of `code/002_literature.py`.
+- **Another input file, by editing the script**: set `input_file` in the `Input (optional)` section at the top of `code/001_literature.py`.
 - **No input file at all**: write `research_context` and/or `request` directly in that section. What you write there overrides the value in the input file; if you write both, no input file is read.
 
 The input file is chosen in this order: command-line argument > `input_file` in the script > `[paths] litres_input` in `config.toml` (default: `data/user/litres_sample.toml`).
@@ -172,6 +164,14 @@ What happens:
 
 The progress of each conversation is printed to the console.
 The first run takes longer, because every abstract has to be embedded once; later runs only embed new ones.
+
+### Paper summary from Zotero: `code/002_fromZotero.py`
+
+Pulls a PDF from your local Zotero library, converts it to text, and asks the LLM a fixed set of questions about it.
+
+```bash
+uv run python code/002_fromZotero.py
+```
 
 ---
 
@@ -209,8 +209,8 @@ If you change the embedding model, a new collection is created automatically (th
 ```
 azekra/
 ├─ code/                    Scripts you run
-│  ├─ 001_fromZotero.py
-│  └─ 002_literature.py
+│  ├─ 001_literature.py
+│  └─ 002_fromZotero.py
 ├─ src/squarewheels/        The library (imported as `squarewheels`)
 ├─ config.example.toml      Template of config.toml
 └─ pyproject.toml / uv.lock Dependencies
