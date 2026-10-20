@@ -185,7 +185,7 @@ def run_litres_vectorstore(
     research_context,
     vectorstore,
     pmids = None,
-    request = "Please give brief introcudtion of that context. I assume ~10 citations will be required.",
+    request = "Please give brief introduction of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
     ):
     """Answering with literature vector-store (RAG)
