@@ -1,0 +1,12 @@
+# Input of code/002_literature.py
+# Text between ''' and ''' is used as is (no escaping needed).
+
+# Research context: what you are working on. Used for both PubMed search and writing.
+research_context = '''
+関節リウマチの難治性についての遺伝的素因を明らかにし、精密医療を実現したい。
+'''
+
+# Request: what the LLM should write, based on the collected literature.
+request = '''
+提示されている研究テーマについて、10件程度の文献を参照しつつ、かんたんに既知の知見をまとめて教えてください。
+'''

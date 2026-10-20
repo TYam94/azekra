@@ -1,3 +1,4 @@
-# Personal input files. Contents are not tracked; only this directory is.
+# Personal input files. Contents are not tracked, except this file and the sample input.
 *
 !.gitignore
+!litres_sample.toml

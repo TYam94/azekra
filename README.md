@@ -121,7 +121,7 @@ uv run python code/001_fromZotero.py
 
 ### Literature research: `code/002_literature.py`
 
-1. Write your input file `data/user/litres.toml` (in English):
+1. Write your input file. The sample `data/user/litres_sample.toml` is used by default; copy it (e.g. to `data/user/litres.toml`) and edit:
    ```toml
    # What you are working on. Used for both PubMed search and writing.
    research_context = '''
@@ -134,6 +134,8 @@ uv run python code/001_fromZotero.py
    '''
    ```
    Text between `'''` and `'''` is used as is, including line breaks; no escaping is needed.
+   Any language works (the LLM is told to search the database in English), but English input tends to give better results, since searching the database relies on the embedding model.
+   Then point `[paths] litres_input` in `config.toml` to your file, or use one of the other ways below.
 2. Run it from the project folder:
    ```bash
    uv run python code/002_literature.py
@@ -148,7 +150,7 @@ Other ways to give the input (handy when running from an IDE):
 - **Another input file, by editing the script**: set `input_file` in the `Input (optional)` section at the top of `code/002_literature.py`.
 - **No input file at all**: write `research_context` and/or `request` directly in that section. What you write there overrides the value in the input file; if you write both, no input file is read.
 
-The input file is chosen in this order: command-line argument > `input_file` in the script > `[paths] litres_input` in `config.toml` (default: `data/user/litres.toml`).
+The input file is chosen in this order: command-line argument > `input_file` in the script > `[paths] litres_input` in `config.toml` (default: `data/user/litres_sample.toml`).
 
 What happens:
 
@@ -166,7 +168,7 @@ The first run takes longer, because every abstract has to be embedded once; late
 
 ## Where data goes
 
-All data is written under `data/` (ignored by git, except the empty `data/user/` folder). With the default `config.toml`:
+All data is written under `data/` (ignored by git, except `data/user/` with the sample input). With the default `config.toml`:
 
 | Path | Content |
 |---|---|
@@ -174,7 +176,7 @@ All data is written under `data/` (ignored by git, except the empty `data/user/`
 | `data/db_PubMed/Chroma/` | Vector database built from the cache. Safe to delete; it is rebuilt from the JSON |
 | `data/threads/` | Saved conversations (`<date-time>_<workflow>.json`) |
 | `data/_temp/` | PDFs pulled from Zotero |
-| `data/user/` | Your own input files (e.g. `litres.toml`). Only the folder itself is shared in git; its contents are ignored |
+| `data/user/` | Your own input files (e.g. `litres.toml`). Ignored by git, except the sample `litres_sample.toml` |
 
 If you change the embedding model, a new collection is created automatically (the collection name includes the model name).
 

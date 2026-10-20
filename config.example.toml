@@ -16,4 +16,4 @@ PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"
 PubMed_chroma    = "data/db_PubMed/Chroma"
 Zotero_temp      = "data/_temp"
 threads          = "data/threads"
-litres_input     = "data/user/litres.toml"   # Default input of 002_literature.py
+litres_input     = "data/user/litres_sample.toml"   # Default input of 002_literature.py
