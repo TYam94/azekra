@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 ### Open (or create) persistent vector-store --------------
 # Vectors depend on the embedding model; use separate collection per model (e.g. include model name in collection_name).
 # Characters not allowed in Chroma collection name are replaced with "_", and non-alphanumeric ends are trimmed.
-def Chroma_get(embedding, collection_name, path="data/db_PubMed/chroma"):
+def Chroma_get(embedding, collection_name, path):
 
     collection_name = re.sub(r"[^a-zA-Z0-9._-]", "_", collection_name).strip("._-")
 
