@@ -92,6 +92,19 @@ def run_litres_search_PubMed(
 
 
     ### Prepare the thread ----------------------------------------------------
+    # Tips for querying. Repeated in every automatic user message too,
+    # since small models tend to forget the system prompt as rounds go on.
+    litres_tips = (
+        "Please keep in mind following tips: \n"
+        " * Be sure not to input a phrase but a set of terms as query. \n"
+        " * PubMed searches all terms of a query with AND: more terms give fewer hits. Use 2-3 terms per query. \n"
+        " * To make scope broader, remove terms from the query, rather than adding other terms. \n"
+        " * Consider break down elements and search subset of them separately. \n"
+        " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
+        " * It can help to replacing too strict or specific terms to more broad-sensed expression. \n"
+        " * Do not add words like 'review', 'management' or 'study' to the query; reviews are excluded anyway. \n"
+    )
+
     thread_master = thread_master_append(
         thread_master=[],
         speaker="system",
@@ -103,11 +116,7 @@ def run_litres_search_PubMed(
             "\n"
             f"[Context]\n{research_context}\n"
             "\n"
-            "Please keep in mind following tips: \n"
-            " * Be sure not to input a phrase but a set of terms as query. \n"
-            " * Consider break down elements and search subset of them separately. \n"
-            " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
-            " * It can help to replacing too strict or specific terms to more broad-sensed expression. \n"
+            f"{litres_tips}"
         )
     )
 
@@ -118,7 +127,14 @@ def run_litres_search_PubMed(
     )
 
     # Automatic user response -------------------------------------------------
+    # Tips are appended unless the search is to be finished.
     def _user_automatic():
+        user_message = _user_automatic_message()
+        if "Let's finish." not in user_message:
+            user_message = f"{user_message} \n\n{litres_tips}"
+        return user_message
+
+    def _user_automatic_message():
 
         # A single search reached the maximum: the query is too broad (results discarded)
         if litres_status == "too_broad":
