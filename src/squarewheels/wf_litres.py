@@ -34,6 +34,9 @@ def run_litres_search_PubMed(
 
     ### Compose tools for LLM -------------------------------------------------
     # PMIDs are stored into litres_round directly; the LLM gets only a summary of counts.
+    # "new" of each query is counted against PMIDs known before this call, so overlaps
+    # between queries of the same call are counted in each of them. The top-level "new"
+    # is the de-duplicated count for the whole call.
     def _tool_PubMed_search_PMID_array(array_query: str):
         litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=10000, flatten=False)
 
