@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from .ch_chat import JST, post_clean, thread_master_to_prompt
+from .ms_chat import JST, post_clean, thread_master_to_prompt
 
 MODULE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = MODULE_DIR / "config" / "qset_TAMMICKURR_ja.json"

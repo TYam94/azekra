@@ -4,7 +4,7 @@
 import json
 import logging
 
-from .ch_chat import thread_create_response, thread_master_append
+from .ms_chat import thread_create_response, thread_master_append
 from .db_pubmed import PubMed_search_PMID_array
 
 ## Logging --------------------------------------------------------------------
