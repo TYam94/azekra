@@ -38,10 +38,10 @@ def Chroma_get(embedding, collection_name, path):
 # Returns the number of added entries.
 def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMID_abstracts.json", batch_size=1000):
 
-    # Load stored abstracts from PubMed (if exist)
+    # Load stored abstracts from PubMed
     file_path = Path(file_PubMed_abstracts)
     if not file_path.exists():
-        return 0
+        raise FileNotFoundError(f"Stored PubMed abstracts not found: {file_path}")
 
     with open(file_path, "r", encoding="utf-8") as f:
         PubMed_stored_absts = json.load(f)
