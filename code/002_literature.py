@@ -14,6 +14,7 @@ import logging
 import sys
 import tomllib
 from datetime import datetime
+from pathlib import Path
 
 from langchain_openai import OpenAIEmbeddings
 from openai import OpenAI
@@ -82,7 +83,7 @@ def main():
 
     squarewheels.thread_save(
         search_thread,
-        path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d-%H%M%S}_litres_search_PubMed.json",
+        path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_search_PubMed.json",
         meta={"workflow": "run_litres_search_PubMed", "input": None if file_input is None else str(file_input), "model": LLM_model, "research_context": research_context},
     )
 
@@ -119,9 +120,31 @@ def main():
 
     squarewheels.thread_save(
         litres_thread,
-        path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d-%H%M%S}_litres_vectorstore.json",
+        path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_vectorstore.json",
         meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request},
     )
+
+    # Save the final answer as Markdown next to the input file (<input>_litres_<datetime>.md)
+    # Without an input file, it goes to the folder of the default input (litres_<datetime>.md).
+    now = datetime.now().astimezone()
+    if file_input is None:
+        path_result = Path(config["paths"]["litres_input"]).parent / f"litres_{now:%Y%m%d_%H%M%S}.md"
+    else:
+        path_result = Path(file_input).with_name(f"{Path(file_input).stem}_litres_{now:%Y%m%d_%H%M%S}.md")
+
+    answer = next((post['message'] for post in reversed(litres_thread) if post['speaker'] == "assistant"), "(There was no answer)")
+
+    path_result.write_text(
+        f"# Literature research result\n\n"
+        f"- Date: {now:%Y-%m-%d %H:%M:%S (%:z)}\n"
+        f"- Input: {'(written in the script)' if file_input is None else file_input}\n"
+        f"- Model: {LLM_model} / Embedding: {embedding_client.model}\n\n"
+        f"## Research context\n\n{research_context}\n\n"
+        f"## Request\n\n{request}\n\n"
+        f"## Answer\n\n{answer}\n",
+        encoding="utf-8",
+    )
+    print(f"Result saved: {path_result}")
 
 
 ## Entry point ----------------------------------------------------------------

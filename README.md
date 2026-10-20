@@ -26,7 +26,7 @@ Everything except PubMed access runs on your own computer through [LM Studio](ht
 | [LM Studio](https://lmstudio.ai/) (with the `lms` command) | Yes | Runs the LLM and the embedding model locally |
 | An LLM and an embedding model in LM Studio | Yes | Defaults: `google/gemma-4-e2b`, `text-embedding-embeddinggemma-300m-qat` |
 | Internet connection | Yes | For PubMed (NCBI E-utilities) and the first download of models/packages |
-| [Zotero](https://www.zotero.org/) 7 | Only for `001_fromZotero.py` | Must be running with local API enabled (see below) |
+| [Zotero](https://www.zotero.org/) 9 or later | Only for `001_fromZotero.py` | Must be running with local API enabled (see below) |
 
 A local LLM needs a reasonably powerful machine. The default `gemma-4-e2b` is small and
 runs on most recent PCs; larger models need more memory (and preferably a GPU).
@@ -99,8 +99,11 @@ cp config.example.toml config.toml
 
 ### 5. (Only for Zotero features) Enable Zotero's local API
 
-In Zotero 7: **Settings → Advanced → "Allow other applications on this computer to communicate with Zotero"**.
+In Zotero: **Settings → Advanced → "Allow other applications on this computer to communicate with Zotero"**.
 Zotero must be running when you use the Zotero features (the script tries to start it if it is not).
+
+> The Zotero features rely on Zotero's local API (through [pyzotero](https://github.com/urschrei/pyzotero)).
+> They may break with updates or specification changes of Zotero or its API.
 
 ---
 
@@ -156,10 +159,16 @@ What happens:
 
 1. LM Studio is started and the models are loaded.
 2. The LLM searches PubMed repeatedly, broadening its queries until enough papers are found.
+   A search that alone hits the upper limit (3,000 by default) is discarded and the LLM is asked for narrower queries;
+   when the accumulated results reach the limit, the search ends there.
 3. Abstracts are fetched from PubMed (already-fetched ones are reused from the local cache).
 4. New abstracts are added to the local vector database (Chroma).
-5. The LLM searches that database and writes the requested text with PMID citations.
+5. The LLM searches that database (the whole database, including abstracts collected in earlier runs) and writes the requested text with PMID citations.
 6. Both conversations (search and writing) are saved as JSON under `data/threads/`.
+7. The final answer is saved as Markdown next to the input file, as `<input name>_litres_<YYYYMMDD_HHMMSS>.md`
+   (e.g. `data/user/ra_genetics_litres_20261020_141615.md` for `data/user/ra_genetics.toml`).
+   It contains the date, input, models, research context, request and the answer.
+   When no input file is used (both values written in the script), it is saved as `litres_<YYYYMMDD_HHMMSS>.md` in the folder of `[paths] litres_input`.
 
 The progress of each conversation is printed to the console.
 The first run takes longer, because every abstract has to be embedded once; later runs only embed new ones.
@@ -174,9 +183,9 @@ All data is written under `data/` (ignored by git, except `data/user/` with the 
 |---|---|
 | `data/db_PubMed/PMID_abstracts.json` | Cache of fetched PubMed abstracts (the source of truth) |
 | `data/db_PubMed/Chroma/` | Vector database built from the cache. Safe to delete; it is rebuilt from the JSON |
-| `data/threads/` | Saved conversations (`<date-time>_<workflow>.json`) |
+| `data/threads/` | Saved conversations (`<YYYYMMDD_HHMMSS>_<workflow>.json`) |
 | `data/_temp/` | PDFs pulled from Zotero |
-| `data/user/` | Your own input files (e.g. `litres.toml`). Ignored by git, except the sample `litres_sample.toml` |
+| `data/user/` | Your own input files (e.g. `litres.toml`) and the results written next to them (`*_litres_<YYYYMMDD_HHMMSS>.md`). Ignored by git, except the sample `litres_sample.toml` |
 
 If you change the embedding model, a new collection is created automatically (the collection name includes the model name).
 
