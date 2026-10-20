@@ -74,7 +74,12 @@ def post_print(post: str):
                 "  ")}"
             )
     else:
-        print(f"[{post['speaker']} | {post['datetime']}]\n{textwrap.indent(post['message'], "  ")}")
+        # Truncate long message, keeping line breaks (textwrap.shorten would collapse them)
+        message = post['message']
+        if len(message) > 5000:
+            message = f"{message[:5000]} ..."
+
+        print(f"[{post['speaker']} | {post['datetime']}]\n{textwrap.indent(message, "  ")}")
 
 
 ### Make prompt-thread from the master-thread ---------------------------------
