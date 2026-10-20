@@ -1,7 +1,6 @@
 
 ## Environment ----------------------------------------------------------------
 import logging
-import subprocess
 
 import pymupdf4llm
 from langchain_openai import OpenAIEmbeddings
@@ -19,8 +18,7 @@ myZotero = squarewheels.Zotero_get()
 
 ### LLM/Embedding -------------------------------------------------------------
 # lmstudio
-subprocess.run("lms daemon up", check=True, shell=True, stdin=subprocess.DEVNULL)
-subprocess.run("lms server start", check=True, shell=True, stdin=subprocess.DEVNULL)
+squarewheels.lms_start()
 
 # LLM client
 client_LLM = OpenAI(
