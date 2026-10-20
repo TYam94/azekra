@@ -22,19 +22,24 @@ logger = logging.getLogger(__name__)
 ### Clean the text into tidy post ---------------------------------------------
 def post_clean(text: str, speaker: str) -> str:
     """Clean the text into tidy post.
-    Removes heading speaker name (added by LLM) automatically, and, flatten the text.
+    Removes heading speaker name (added by LLM) automatically, and tidies up blank lines.
     Mainly for multi-agent thread.
+
+    Paragraph breaks (single blank lines) and indentation are kept, so that Markdown in the
+    text renders as intended (e.g. a paragraph directly followed by "---" would become a heading).
 
     Args:
         text: Text to be processed.
         speaker: The name of speaker to remove.
 
     Returns:
-        Heading speaker name removed, flatten text.
+        Heading speaker name removed, trailing spaces of each line removed,
+        and consecutive blank lines collapsed into one.
     """
     text = text.strip()
     text = re.sub(rf"\A\s*(?:{speaker}\s*:\s*)+", "", text)
-    post = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    post = "\n".join(line.rstrip() for line in text.splitlines())
+    post = re.sub(r"\n{3,}", "\n\n", post).strip()
     return post
 
 
