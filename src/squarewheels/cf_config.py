@@ -3,7 +3,6 @@
 ## Dependency -----------------------------------------------------------------
 import logging
 import tomllib
-from datetime import datetime
 from pathlib import Path
 
 ## Logging --------------------------------------------------------------------
@@ -42,10 +41,3 @@ def config_load(path=None):
     logger.info(f"config_load: {path}")
 
     return config
-
-
-## Time -----------------------------------------------------------------------
-### Current time ------------------------------------------
-# Timezone-aware current time in the system's local timezone.
-def time_now():
-    return datetime.now().astimezone()
