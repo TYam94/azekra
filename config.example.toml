@@ -7,7 +7,7 @@ llm       = "gemma-4-e2b"
 embedding = "text-embedding-embeddinggemma-300m-qat"
 
 [PubMed]
-email   = ""   # Required by NCBI E-utilities
+email   = ""   # Recommended by NCBI E-utilities (warning if empty)
 api_key = ""   # Optional. Raises the rate limit when given
 
 # Relative paths are resolved from the directory of this file.
@@ -15,3 +15,4 @@ api_key = ""   # Optional. Raises the rate limit when given
 PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"
 PubMed_chroma    = "data/db_PubMed/Chroma"
 Zotero_temp      = "data/_temp"
+threads          = "data/threads"

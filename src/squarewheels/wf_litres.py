@@ -24,6 +24,9 @@ def run_litres_search_PubMed(
     litres_gain_minimum = 0.05
     ):
     """Searching PubMed with LLM
+
+    Returns:
+        thread_master: Thread of the search. The last post holds the searched PMIDs, joined by ", ".
     """
     # Literature research managers
     litres_searched = []
@@ -161,16 +164,18 @@ def run_litres_search_PubMed(
             speaker_message=_user_automatic()
         )
 
-        # If exit flag was given, 
+        # If exit flag was given,
         if thread_master[-1]['speaker'] == "user" and "Let's finish." in thread_master[-1]['message']:
-            thread_master = thread_master_append(
-                thread_master, 
-                speaker="user",
-                speaker_message= ", ".join(litres_searched)
-            )
             break
 
-    return litres_searched
+    # Record the result as the last post (also when litres_i_maximum is reached)
+    thread_master = thread_master_append(
+        thread_master,
+        speaker="user",
+        speaker_message= ", ".join(litres_searched)
+    )
+
+    return thread_master
 
 
 ### Answering with literature vector-store (RAG) ------------------------------
@@ -180,7 +185,7 @@ def run_litres_vectorstore(
     research_context,
     vectorstore,
     pmids = None,
-    request = "Please write introduction session for that context. I assume 10~20 citations must be required.",
+    request = "Please give brief introcudtion of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
     ):
     """Answering with literature vector-store (RAG)

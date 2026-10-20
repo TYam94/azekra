@@ -6,6 +6,7 @@ import logging
 import re
 import textwrap
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import numpy as np
 
@@ -243,6 +244,45 @@ def thread_create_response(
         )
 
     return thread_master
+
+
+## Saving/loading threads =====================================================
+### Save the thread to a file -------------------------------------------------
+def thread_save(thread_master, path, meta=None):
+    """Save the thread to a JSON file.
+
+    Args:
+        thread_master: Thread to save.
+        path: Path of the file. Parent directories are created if not exist.
+        meta: Any JSON-serializable information about the thread (e.g. workflow, model, context).
+
+    Returns:
+        path: Path of the saved file.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"meta": meta or {}, "thread": thread_master}, f, indent=4, ensure_ascii=False)
+
+    return path
+
+
+### Load the thread from a file -----------------------------------------------
+def thread_load(path):
+    """Load the thread saved by `thread_save()`.
+
+    Args:
+        path: Path of the file.
+
+    Returns:
+        thread_master: Loaded thread.
+        meta: Information saved with the thread.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        saved = json.load(f)
+
+    return saved["thread"], saved["meta"]
 
 
 ## Quick wrappers -------------------------------------------------------------
