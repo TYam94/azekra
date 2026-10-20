@@ -54,20 +54,20 @@ def post_print(post: str):
         post_parsed = json.loads(post['message'])
 
         print(
-            f"{post['speaker']} ({post['datetime']})\n"
+            f"[{post['speaker']} | {post['datetime']}]\n"
             f"  reasoning_content:\n{textwrap.indent(post_parsed['reasoning_content'], "    ")}"
             )
         
         if post_parsed.get("tool_calls"):
             print(
-                f"{post['speaker']} ({post['datetime']})\n"
+                f"[{post['speaker']} | {post['datetime']}]\n"
                 f"  tool_calls:\n{textwrap.indent(json.dumps(post_parsed.get("tool_calls")), "    ")}"
                 )
 
     elif post['speaker'] == "tool_response":
         post_parsed = json.loads(post['message'])
         print(
-            f"{post['speaker']} ({post['datetime']})\n"
+            f"[{post['speaker']} | {post['datetime']}]\n"
             f"{textwrap.indent(
                 (   f"name: {post_parsed.get("name")}\n"
                     f"tool_call_id: {post_parsed.get("tool_call_id")}\n"
@@ -75,7 +75,7 @@ def post_print(post: str):
                 "  ")}"
             )
     else:
-        print(f"{post['speaker']} ({post['datetime']})\n{textwrap.indent(post['message'], "  ")}")
+        print(f"[{post['speaker']} | {post['datetime']}]\n{textwrap.indent(post['message'], "  ")}")
 
 
 ### Make prompt-thread from the master-thread ---------------------------------
