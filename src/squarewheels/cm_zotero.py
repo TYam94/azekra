@@ -91,7 +91,7 @@ def Zotero_makelist(zot, limit):
 
 ### Pull PDF from Zotero ----------------------------------
 # Returns the path of dumped PDF
-def Zotero_pullPDF(zot, paper, path="data/_temp"):
+def Zotero_pullPDF(zot, paper, path):
     if paper['Zotero_key_PDF']:
         filename_PDF = f'{path}/{paper['Zotero_key_PDF']}.pdf'
         zot.dump(paper['Zotero_key_PDF'], filename=filename_PDF)

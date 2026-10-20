@@ -13,6 +13,20 @@ from Bio import Entrez
 logger = logging.getLogger(__name__)
 
 
+## Setting --------------------------------------------------------------------
+### Set Entrez identity -----------------------------------
+# NCBI requires an email address for E-utilities. api_key is optional (raises the rate limit).
+def PubMed_set_Entrez(email, api_key=None):
+
+    if not email:
+        raise ValueError("Email for NCBI E-utilities is not given. Set it in config.toml [PubMed].")
+
+    Entrez.email = email
+
+    if api_key:
+        Entrez.api_key = api_key
+
+
 ## Searching ------------------------------------------------------------------
 ### Basic search ------------------------------------------
 def PubMed_search_PMID(query, retmax=10000, lang="En", exc_Review=True):
@@ -89,7 +103,7 @@ def _extract_abstract(article):
 
 
 ### Fetch abstract based on PMID --------------------------
-def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json", batch_size=1000):
+def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts, batch_size=1000):
 
     # Containers
     results = []
@@ -166,7 +180,7 @@ def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts = "data/db_PubMed/PMID_a
     return results
 
 
-def PubMed_save_abstracts(litres_absts, file_PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"):
+def PubMed_save_abstracts(litres_absts, file_PubMed_abstracts):
 
     file_path = Path(file_PubMed_abstracts)
     file_path.parent.mkdir(parents=True, exist_ok=True)

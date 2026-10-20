@@ -26,7 +26,7 @@ def Chroma_get(embedding, collection_name, path):
     vectorstore = Chroma(
         collection_name=collection_name,
         embedding_function=embedding,
-        persist_directory=path,
+        persist_directory=str(path),
         )
 
     return vectorstore
@@ -36,7 +36,7 @@ def Chroma_get(embedding, collection_name, path):
 ### Add stored PubMed abstracts not yet in vector-store ---
 # "PMID:<PMID>" is used as the id of each entry.
 # Returns the number of added entries.
-def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMID_abstracts.json", batch_size=1000):
+def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts, batch_size=1000):
 
     # Load stored abstracts from PubMed
     file_path = Path(file_PubMed_abstracts)

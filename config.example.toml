@@ -1,0 +1,17 @@
+# Copy this file to config.toml and edit it. config.toml is not tracked by git.
+
+[lmstudio]
+base_url  = "http://localhost:1234/v1"
+api_key   = "lm-studio"
+llm       = "gemma-4-e2b"
+embedding = "text-embedding-embeddinggemma-300m-qat"
+
+[PubMed]
+email   = ""   # Required by NCBI E-utilities
+api_key = ""   # Optional. Raises the rate limit when given
+
+# Relative paths are resolved from the directory of this file.
+[paths]
+PubMed_abstracts = "data/db_PubMed/PMID_abstracts.json"
+PubMed_chroma    = "data/db_PubMed/Chroma"
+Zotero_temp      = "data/_temp"

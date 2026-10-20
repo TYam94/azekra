@@ -221,3 +221,5 @@ data/*
 !.gitignore
 
 .DS_Store
+# Local configuration (copy from config.example.toml)
+config.toml
