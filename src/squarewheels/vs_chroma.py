@@ -34,9 +34,9 @@ def Chroma_get(embedding, collection_name, path):
 
 ## Syncing --------------------------------------------------------------------
 ### Add stored PubMed abstracts not yet in vector-store ---
-# PMID is used as the id of each entry.
+# "PMID:<PMID>" is used as the id of each entry.
 # Returns the number of added entries.
-def Chroma_sync_abstracts(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMID_abstracts.json", batch_size=1000):
+def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMID_abstracts.json", batch_size=1000):
 
     # Load stored abstracts from PubMed (if exist)
     file_path = Path(file_PubMed_abstracts)
@@ -48,7 +48,7 @@ def Chroma_sync_abstracts(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMI
 
     # Pick up ones not in vector-store (de-duplicated by PMID)
     ids_stored = set(vectorstore.get(include=[])["ids"])
-    absts_new = {item["PMID"]: item for item in PubMed_stored_absts if item["PMID"] not in ids_stored}
+    absts_new = {f"PMID:{item['PMID']}": item for item in PubMed_stored_absts if f"PMID:{item['PMID']}" not in ids_stored}
 
     # Abstracts into documents
     docs_new = [
@@ -58,11 +58,12 @@ def Chroma_sync_abstracts(vectorstore, file_PubMed_abstracts="data/db_PubMed/PMI
             )
         for item in absts_new.values()
     ]
+    ids_new = list(absts_new.keys())
 
     # Batch add
     for i in range(0, len(docs_new), batch_size):
         batch = docs_new[i:i + batch_size]
-        vectorstore.add_documents(batch, ids=[doc.metadata["PMID"] for doc in batch])
-        logger.info(f"Chroma_sync_abstracts: {i + len(batch)} / {len(docs_new)} added")
+        vectorstore.add_documents(batch, ids=ids_new[i:i + batch_size])
+        logger.info(f"Chroma_sync_abstracts_PubMed: {i + len(batch)} / {len(docs_new)} added")
 
     return len(docs_new)
