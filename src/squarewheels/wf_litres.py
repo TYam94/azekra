@@ -29,13 +29,34 @@ def run_litres_search_PubMed(
         thread_master: Thread of the search. The last post holds the searched PMIDs, joined by ", ".
     """
     # Literature research managers
-    litres_searched = []
+    litres_searched = []    # Accumulated PMIDs (accepted rounds only)
+    litres_round = set()    # PMIDs found in the current round, filled by the tool below
 
     ### Compose tools for LLM -------------------------------------------------
+    # PMIDs are stored into litres_round directly; the LLM gets only a summary of counts.
     def _tool_PubMed_search_PMID_array(array_query: str):
-        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=10000, flatten=True)
-        results = ", ".join(litres_search)
-        return results 
+        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=10000, flatten=False)
+
+        litres_known = set(litres_searched) | litres_round
+        litres_call = set()
+        per_query = []
+
+        for item in litres_search:
+            pmids = set(item['result'])
+            summary = {"query": item['query'], "hits": len(pmids), "new": len(pmids - litres_known)}
+            if len(pmids) >= 10000:
+                summary["note"] = "10000 or more hits (truncated). Too broad."
+            per_query.append(summary)
+            litres_call |= pmids
+
+        litres_round.update(litres_call)
+
+        return json.dumps({
+            "per_query": per_query,
+            "total_hits": len(litres_call),
+            "new": len(litres_call - litres_known),
+            "already_found": len(litres_call & litres_known),
+        })
 
     LLM_tools = [
         {
@@ -45,7 +66,8 @@ def run_litres_search_PubMed(
                 "description": (
                     "Function to search Pubmed. "
                     "Takes an array of query (set of terms) and run these queries one by one. "
-                    "Returns unique set of PMID from conducted searches. "
+                    "Returns the number of hits for each query and for all queries together, "
+                    "with how many of them are new (not found before) and already found. "
                     "Database is in English, so input query in English. "
                 ),
                 "parameters": {
@@ -151,9 +173,9 @@ def run_litres_search_PubMed(
     for i in range(litres_i_maximum):
         # Count current records
         litres_gain = len(litres_searched)
-        n_posts = len(thread_master)
+        litres_round.clear()
 
-        # Create next response
+        # Create next response (search results are stored into litres_round by the tool)
         thread_master = thread_create_response(
             client=client,
             model=model,
@@ -165,15 +187,7 @@ def run_litres_search_PubMed(
             tool_functions=LLM_tool_functions,
         )
 
-        # Collect search results of this round
-        litres_round = set()
-        for post in thread_master[n_posts:]:
-            if post['speaker'] == "tool_response":
-                post_parsed = json.loads(post['message'])
-                if post_parsed.get("name") == "_tool_PubMed_search_PMID_array":
-                    litres_round.update(pmid for pmid in post_parsed.get("content").split(", ") if pmid)
-
-        # Add them (de-duplicated), unless the maximum is reached
+        # Add search results of this round (de-duplicated), unless the maximum is reached
         #   too_broad: this round alone reaches the maximum -> discard, ask for narrower query
         #   full:      the total reaches the maximum        -> discard, finish with current results
         litres_candidate = set(litres_searched) | litres_round
