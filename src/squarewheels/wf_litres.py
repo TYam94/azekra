@@ -18,7 +18,7 @@ def run_litres_search_PubMed(
     model,
     research_context,
     litres_n_minimum = 100, 
-    litres_n_maximum = 10000, 
+    litres_n_maximum = 3000, 
     litres_i_minimum = 3, 
     litres_i_maximum = 20,
     litres_gain_minimum = 0.05
@@ -33,7 +33,7 @@ def run_litres_search_PubMed(
 
     ### Compose tools for LLM -------------------------------------------------
     def _tool_PubMed_search_PMID_array(array_query: str):
-        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=litres_n_maximum, flatten=True)
+        litres_search = PubMed_search_PMID_array(array_query = array_query, retmax=10000, flatten=True)
         results = ", ".join(litres_search)
         return results 
 
@@ -94,6 +94,26 @@ def run_litres_search_PubMed(
 
     # Automatic user response -------------------------------------------------
     def _user_automatic():
+
+        # A single search reached the maximum: the query is too broad (results discarded)
+        if litres_status == "too_broad":
+            return (
+                f"This is round #{(i + 1)}. Your last search alone returned {len(litres_round)} literatures, "
+                f"which reaches the limit of {litres_n_maximum}. These results were discarded; "
+                f"you still have {len(litres_searched)} literatures. \n"
+                "The query is too broad. Please make it narrower: use more specific terms, "
+                "combine terms related to the core of the topic, and avoid overly general words."
+            )
+
+        # Accumulated results reached the maximum: enough (results of this round not added)
+        if litres_status == "full":
+            return (
+                f"This is round #{(i + 1)}. Adding your last search would bring the total to {len(litres_candidate)} literatures, "
+                f"which reaches the limit of {litres_n_maximum}. These results were not added; "
+                f"you have {len(litres_searched)} literatures. \n"
+                "That is enough. Let's finish."
+            )
+
         user_message = f"This is round #{(i + 1)}. You have found {len(litres_searched)} literatures. "
 
         try:
@@ -131,6 +151,7 @@ def run_litres_search_PubMed(
     for i in range(litres_i_maximum):
         # Count current records
         litres_gain = len(litres_searched)
+        n_posts = len(thread_master)
 
         # Create next response
         thread_master = thread_create_response(
@@ -144,15 +165,25 @@ def run_litres_search_PubMed(
             tool_functions=LLM_tool_functions,
         )
 
-        # Correct search results
-        for post in thread_master:
+        # Collect search results of this round
+        litres_round = set()
+        for post in thread_master[n_posts:]:
             if post['speaker'] == "tool_response":
                 post_parsed = json.loads(post['message'])
                 if post_parsed.get("name") == "_tool_PubMed_search_PMID_array":
-                    litres_searched.extend(post_parsed.get("content").split(", "))
+                    litres_round.update(pmid for pmid in post_parsed.get("content").split(", ") if pmid)
 
-        # De-duplicate
-        litres_searched = list(set(litres_searched))
+        # Add them (de-duplicated), unless the maximum is reached
+        #   too_broad: this round alone reaches the maximum -> discard, ask for narrower query
+        #   full:      the total reaches the maximum        -> discard, finish with current results
+        litres_candidate = set(litres_searched) | litres_round
+        if len(litres_round) >= litres_n_maximum:
+            litres_status = "too_broad"
+        elif len(litres_candidate) >= litres_n_maximum:
+            litres_status = "full"
+        else:
+            litres_status = None
+            litres_searched = list(litres_candidate)
 
         # Count updated records
         litres_gain = len(litres_searched) - litres_gain
