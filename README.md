@@ -125,7 +125,7 @@ Run with the project folder (or any folder inside it) as the working directory, 
 
    # What the LLM should write, based on the collected literature.
    request = '''
-   Please write introduction section for that context. I assume 10~20 citations must be required.
+   Please give brief introduction of that context.
    '''
    ```
    Text between `'''` and `'''` is used as is, including line breaks; no escaping is needed.
