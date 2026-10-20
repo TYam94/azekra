@@ -179,6 +179,7 @@ def run_litres_vectorstore(
     model,
     research_context,
     vectorstore,
+    pmids = None,
     request = "Please write introduction session for that context. I assume 10~20 citations must be required.",
     thread_maxlen = 100,
     ):
@@ -189,6 +190,7 @@ def run_litres_vectorstore(
         model: Model name to use.
         research_context: Research context passed to system prompt.
         vectorstore: Vector-store of literatures (e.g. Chroma). Each document should have 'PMID' and 'publication_date' in its metadata.
+        pmids: If given, search is limited to these PMIDs. If None, whole vector-store is searched.
         request: User's request to the assistant.
         thread_maxlen: Maximum number of rounds.
 
@@ -199,12 +201,18 @@ def run_litres_vectorstore(
     def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
 
         # Generate retriever dynamically with given threshold
+        search_kwargs = {
+            "score_threshold": score_threshold,
+            "k": 50,
+        }
+
+        # Limit to given PMIDs
+        if pmids is not None:
+            search_kwargs["filter"] = {"PMID": {"$in": list(pmids)}}
+
         retriever = vectorstore.as_retriever(
             search_type="similarity_score_threshold",
-            search_kwargs={
-                "score_threshold": score_threshold,
-                "k": 50,
-            },
+            search_kwargs=search_kwargs,
         )
 
         docs = retriever.invoke(query)
