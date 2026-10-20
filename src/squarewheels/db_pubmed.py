@@ -22,7 +22,7 @@ def PubMed_search_PMID(query, retmax=10000, lang="En", exc_Review=True):
     if lang == "En":
         term = f"{term} AND (english[LA])"
     elif lang == "EnJp":
-        term = f"{term} AND (english[LA]) OR japanese[LA]"
+        term = f"{term} AND (english[LA] OR japanese[LA])"
         
     if exc_Review == True:
         term = f"{term} NOT Review[PT]"
@@ -104,12 +104,11 @@ def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts = "data/db_PubMed/PMID_a
     else:
         PubMed_stored_absts = []
 
-    # Pick up stored ones
+    # Pick up stored ones (index by PMID for O(1) lookup)
+    PubMed_stored_absts_index = {item.get("PMID"): item for item in PubMed_stored_absts}
     for pmid in pmids:
-        for item in PubMed_stored_absts:
-            if item.get("PMID") == pmid:
-                results.append(item)
-                break
+        if pmid in PubMed_stored_absts_index:
+            results.append(PubMed_stored_absts_index[pmid])
         else:
             pmids_fetch.append(pmid)
 

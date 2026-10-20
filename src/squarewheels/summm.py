@@ -127,7 +127,7 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
 
 
 ### Add the speaker's message to the thread -----------------------------------
-def thread_master_append(thread_master, speaker, speaker_message, print=True):
+def thread_master_append(thread_master, speaker, speaker_message, print_post=True):
     """Add the speaker's message to the thread.
     It automatically add the time (in JST) and given speaker's name.
 
@@ -135,7 +135,7 @@ def thread_master_append(thread_master, speaker, speaker_message, print=True):
         thread_master: Thread to append.
         speaker: The name of the speaker.
         speaker_message: Message to add.
-        print: Automatically print the message into output when True.
+        print_post: Automatically print the message into output when True.
 
     Returns:
         thread_master: Extended thread.
@@ -149,7 +149,7 @@ def thread_master_append(thread_master, speaker, speaker_message, print=True):
 
     thread_master.append(speaker_post)
 
-    if print: post_print(speaker_post)
+    if print_post: post_print(speaker_post)
 
     return thread_master
 
@@ -362,7 +362,6 @@ def run_litres_search_PubMed(
         return user_message
 
     ### Run the thread --------------------------------------------------------
-    thread_exit = False
     for i in range(litres_i_maximum):
         # Count current records
         litres_gain = len(litres_searched)
@@ -400,12 +399,7 @@ def run_litres_search_PubMed(
         )
 
         # If exit flag was given, 
-        for post in thread_master:
-            if post['speaker'] == "user" and "Let's finish." in post['message']:
-                thread_exit = True
-                break
-
-        if thread_exit == True: 
+        if thread_master[-1]['speaker'] == "user" and "Let's finish." in thread_master[-1]['message']:
             thread_master = thread_master_append(
                 thread_master, 
                 speaker="user",
@@ -528,7 +522,6 @@ def run_litres_vectorstore(
     )
 
     #### Run the thread -----------------------------------
-    thread_exit = False
     for i in range(thread_maxlen):
 
         thread_master = thread_create_response(
@@ -543,13 +536,8 @@ def run_litres_vectorstore(
             temperature=0
         )
 
-        # If exit flag was given,
-        for post in thread_master:
-            if "(There was no response)" in post['message']:
-                thread_exit = True
-                break
-
-        if thread_exit == True: break
+        # Exit when the assistant replied (content or no response) instead of calling tools
+        if thread_master[-1]['speaker'] == "assistant": break
 
     return thread_master
 
