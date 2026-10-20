@@ -3,10 +3,9 @@
 ## Dependency -----------------------------------------------------------------
 import json
 import logging
-from datetime import datetime
 from pathlib import Path
 
-from .ms_chat import JST, post_clean, thread_master_to_prompt
+from .ms_chat import post_clean, thread_master_append, thread_master_to_prompt
 
 MODULE_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = MODULE_DIR / "config" / "qset_TAMMICKURR_ja.json"
@@ -33,13 +32,12 @@ def run_theme_and_questions(client, model, theme, qset):
         if question['field'] == "assistant":
             logger.error("Invalid question field.")
 
-        post_user = {
-            'speaker':  question['field'],
-            'message':  post_clean(question['question'], speaker=question['field']),
-            'datetime': datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')
-            }
-
-        thread_master.append(post_user)
+        thread_master = thread_master_append(
+            thread_master,
+            speaker=question['field'],
+            speaker_message=post_clean(question['question'], speaker=question['field']),
+            print_post=False,
+            )
 
         # Construct a prompt
         thread_prompt = thread_master_to_prompt(
@@ -55,15 +53,13 @@ def run_theme_and_questions(client, model, theme, qset):
             messages=thread_prompt
             )
 
-        # Form a response into a post
-        speaker_post = {
-            'speaker': "assistant",
-            'message': post_clean(speaker_response.choices[0].message.content, "assistant"),
-            'datetime': datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S')
-            }
-
-        # Print and append
-        thread_master.append(speaker_post)
+        # Append the response
+        thread_master = thread_master_append(
+            thread_master,
+            speaker="assistant",
+            speaker_message=post_clean(speaker_response.choices[0].message.content, "assistant"),
+            print_post=False,
+            )
 
     return(thread_master)
 

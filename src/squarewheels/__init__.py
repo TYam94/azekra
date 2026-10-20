@@ -1,5 +1,5 @@
 
-from .cf_config import config_load
+from .cf_config import config_load, time_now
 from .cm_zotero import Zotero_get, Zotero_makelist, Zotero_pullPDF
 from .db_pubmed import PubMed_fetch_abstracts, PubMed_search_PMID, PubMed_search_PMID_array,PubMed_save_abstracts,PubMed_set_Entrez
 from .lm_lmstudio import lms_load_embeddingmodel, lms_load_LLM, lms_start
@@ -10,6 +10,7 @@ from .wf_paper import PDF_to_MMICKURR
 
 __all__ = [
     "config_load",
+    "time_now",
     "PubMed_set_Entrez",
     "PDF_to_MMICKURR",
     "PubMed_fetch_abstracts",

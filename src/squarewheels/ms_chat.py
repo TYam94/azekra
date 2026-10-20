@@ -5,12 +5,11 @@ import json
 import logging
 import re
 import textwrap
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
 
-JST = timezone(timedelta(hours=+9), 'JST')
+from .cf_config import time_now
 
 ## Logging --------------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -127,7 +126,7 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
 ### Add the speaker's message to the thread -----------------------------------
 def thread_master_append(thread_master, speaker, speaker_message, print_post=True):
     """Add the speaker's message to the thread.
-    It automatically add the time (in JST) and given speaker's name.
+    It automatically add the time (in system's local timezone) and given speaker's name.
 
     Args:
         thread_master: Thread to append.
@@ -140,7 +139,7 @@ def thread_master_append(thread_master, speaker, speaker_message, print_post=Tru
 
     """
     speaker_post = {
-        'datetime': datetime.now(JST).strftime('%Y/%m/%d %H:%M:%S'),
+        'datetime': time_now().strftime('%Y-%m-%d %H:%M:%S (%:z)'),
         'speaker': speaker,
         'message': speaker_message,
         }
