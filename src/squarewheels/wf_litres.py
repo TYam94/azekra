@@ -3,6 +3,7 @@
 ## Dependency -----------------------------------------------------------------
 import json
 import logging
+import re
 
 from .ms_chat import thread_create_response, thread_master_append
 from .db_pubmed import PubMed_search_PMID_array
@@ -227,6 +228,17 @@ def run_litres_search_PubMed(
     return thread_master
 
 
+### Literature entry as Markdown (passed to LLM) ------------------------------
+def _litres_md(metadata, page_content):
+
+    return (
+        f"# PMID: {metadata["PMID"]} \n"
+        f"## Publication_date: {metadata["publication_date"]} \n"
+        f"## Publication_types: {metadata.get("publication_types") or "Unknown"} \n"
+        f"{page_content}\n\n"
+    )
+
+
 ### Answering with literature vector-store (RAG) ------------------------------
 def run_litres_vectorstore(
     client,
@@ -235,6 +247,7 @@ def run_litres_vectorstore(
     vectorstore,
     pmids = None,
     exclude_doi_prefixes = None,
+    must_cite = None,
     request = "Please give brief introduction of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
     ):
@@ -249,12 +262,45 @@ def run_litres_vectorstore(
         pmids: If given, search is limited to these PMIDs. If None, whole vector-store is searched.
         exclude_doi_prefixes: If given, entries whose 'doi_prefix' in metadata is one of these are excluded
             (e.g. ["10.xxxx", "10.yyyy"]). Entries without DOI are kept.
+        must_cite: PMIDs the answer must cite. They should be in the vector-store already (missing ones are skipped with a warning).
+            Their abstracts are passed to LLM with the request, regardless of the search filters above.
         request: User's request to the assistant.
         thread_maxlen: Maximum number of rounds.
 
     Returns:
         thread_master: Thread, with LLM response appended.
+        litres_pmids: PMIDs of literature, each in an array:
+            'must_cite' (given and found in the vector-store), 'seen' (must_cite + all returned by search, in the order seen),
+            'cited' (seen ones cited in the answer), 'cited_unseen' (cited as "PMID: ..." but never seen; possibly made up),
+            'must_cite_uncited' (must_cite ones not cited in the answer).
     """
+    #### Literature passed to LLM -------------------------
+    # PMIDs seen by LLM, in the order seen (must_cite first, then the ones returned by search)
+    pmids_seen = []
+
+    def _seen(pmid):
+        if pmid not in pmids_seen:
+            pmids_seen.append(pmid)
+
+    # Must-cite ones are taken directly from the vector-store (not by similarity)
+    must_cite = [str(pmid) for pmid in (must_cite or [])]
+    must_cite_md = ""
+    if must_cite:
+        stored = vectorstore.get(where={"PMID": {"$in": must_cite}}, include=["metadatas", "documents"])
+        must_cite_found = {metadata["PMID"]: (metadata, document) for metadata, document in zip(stored["metadatas"], stored["documents"])}
+
+        for pmid in must_cite:
+            if pmid not in must_cite_found:
+                logger.warning(f"run_litres_vectorstore: must-cite PMID {pmid} is not in the vector-store; skipped")
+                continue
+            metadata, document = must_cite_found[pmid]
+            if metadata.get("retracted"):
+                logger.warning(f"run_litres_vectorstore: must-cite PMID {pmid} is retracted")
+            must_cite_md = f"{must_cite_md}{_litres_md(metadata, document)}"
+            _seen(pmid)
+
+        must_cite = [pmid for pmid in must_cite if pmid in must_cite_found]
+
     #### Compose tools for LLM ----------------------------
     def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
 
@@ -289,13 +335,8 @@ def run_litres_vectorstore(
         else:
             docs_md = ""
             for doc in docs:
-                docs_md = (
-                    f"{docs_md}"
-                    f"# PMID: {doc.metadata["PMID"]} \n"
-                    f"## Publication_date: {doc.metadata["publication_date"]} \n"
-                    f"## Publication_types: {doc.metadata.get("publication_types") or "Unknown"} \n"
-                    f"{doc.page_content}\n\n"
-                )
+                docs_md = f"{docs_md}{_litres_md(doc.metadata, doc.page_content)}"
+                _seen(doc.metadata["PMID"])
             return docs_md
 
     LLM_tools = [
@@ -348,6 +389,7 @@ def run_litres_vectorstore(
             "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
             "Also consider its publication types (study design, e.g. Randomized Controlled Trial, Meta-Analysis, Case Reports) "
             "as a rough indicator of the strength of evidence. Size and ethnicity of study cohort matters as well. \n"
+            "If the user gives literature that must be cited, cite ALL of them, in addition to the ones you find by search. \n"
             "\n"
             f"[Context]\n{research_context}\n"
             "\n"
@@ -357,6 +399,16 @@ def run_litres_vectorstore(
             " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
         )
     )
+
+    if must_cite_md:
+        request = (
+            f"{request}\n"
+            "\n"
+            "[Literature that must be cited]\n"
+            "Cite ALL of the following, in addition to the ones you find by search. \n"
+            "\n"
+            f"{must_cite_md}"
+        )
 
     thread_master = thread_master_append(
         thread_master,
@@ -382,4 +434,23 @@ def run_litres_vectorstore(
         # Exit when the assistant replied (content or no response) instead of calling tools
         if thread_master[-1]['speaker'] == "assistant": break
 
-    return thread_master
+    #### Literature cited in the answer -------------------
+    # Seen ones are matched as bare numbers too, so that they are caught in any citation style (e.g. "[12345678]").
+    answer = thread_master[-1]['message'] if thread_master[-1]['speaker'] == "assistant" else ""
+    pmids_cited = [pmid for pmid in pmids_seen if re.search(rf"(?<!\d){pmid}(?!\d)", answer)]
+    pmids_cited_unseen = list(dict.fromkeys(pmid for pmid in re.findall(r"PMID:?\s*(\d+)", answer) if pmid not in pmids_seen))
+
+    litres_pmids = {
+        "must_cite": must_cite,
+        "seen": pmids_seen,
+        "cited": pmids_cited,
+        "cited_unseen": pmids_cited_unseen,
+        "must_cite_uncited": [pmid for pmid in must_cite if pmid not in pmids_cited],
+    }
+
+    if pmids_cited_unseen:
+        logger.warning(f"run_litres_vectorstore: cited but never seen (possibly made up): {', '.join(pmids_cited_unseen)}")
+    if litres_pmids["must_cite_uncited"]:
+        logger.warning(f"run_litres_vectorstore: must-cite ones not cited: {', '.join(litres_pmids['must_cite_uncited'])}")
+
+    return thread_master, litres_pmids

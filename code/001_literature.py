@@ -2,11 +2,12 @@
 ## Input (optional) -----------------------------------------------------------
 # Leave None to use the input file. The input file is chosen in this order:
 #   .toml given as command-line argument > input_file below > [paths] litres_input in config.toml
-# research_context / request / exclude_doi_prefixes written here override the ones in the input file.
+# research_context / request / exclude_doi_prefixes / must_cite written here override the ones in the input file.
 input_file = None         # e.g. "data/user/another_topic.toml" (relative to the current directory)
 research_context = None   # e.g. "I aim to elucidate ..."
 request = None            # e.g. "Please write introduction section ..."
 exclude_doi_prefixes = None   # e.g. ["10.xxxx", "10.yyyy"]; publishers excluded from literature search, by DOI prefix
+must_cite = None          # e.g. ["12345678", "23456789"]; PMIDs the answer must cite (fetched from PubMed if not stored)
 
 
 ## Environment ----------------------------------------------------------------
@@ -47,9 +48,11 @@ if research_context is None or request is None:
     if research_context is None: research_context = litres_input["research_context"]
     if request is None: request = litres_input["request"]
     if exclude_doi_prefixes is None: exclude_doi_prefixes = litres_input.get("exclude_doi_prefixes")
+    if must_cite is None: must_cite = litres_input.get("must_cite")
 
 research_context = research_context.strip()
 request = request.strip()
+must_cite = [str(pmid).strip() for pmid in (must_cite or [])] # PMIDs may be written as numbers
 
 ### LLM/Embedding -------------------------------------------------------------
 # lmstudio
@@ -92,9 +95,9 @@ def main():
     # Searched PMIDs are in the last post
     PubMed_PMIDs = [pmid for pmid in search_thread[-1]['message'].split(", ") if pmid]
 
-    # Gather abstracts from locally-stored ones and PubMed
+    # Gather abstracts from locally-stored ones and PubMed (must-cite ones too)
     squarewheels.PubMed_fetch_abstracts(
-        pmids=PubMed_PMIDs, 
+        pmids=list(dict.fromkeys(PubMed_PMIDs + must_cite)),
         file_PubMed_abstracts=config["paths"]["PubMed_abstracts"],
     )
 
@@ -111,20 +114,21 @@ def main():
     )
 
     # Literature-based answer from LLM
-    global litres_thread
-    litres_thread = squarewheels.run_litres_vectorstore(
-        client=LLM_client, 
-        model=LLM_model, 
-        research_context=research_context, 
+    global litres_thread, litres_pmids
+    litres_thread, litres_pmids = squarewheels.run_litres_vectorstore(
+        client=LLM_client,
+        model=LLM_model,
+        research_context=research_context,
         request=request,
         vectorstore=PubMed_vectorstore,
         exclude_doi_prefixes=exclude_doi_prefixes,
+        must_cite=must_cite,
     )
 
     squarewheels.thread_save(
         litres_thread,
         path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_vectorstore.json",
-        meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request, "exclude_doi_prefixes": exclude_doi_prefixes},
+        meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request, "exclude_doi_prefixes": exclude_doi_prefixes, "litres_pmids": litres_pmids},
     )
 
     # Save the final answer as Markdown next to the input file (<input>_litres_<datetime>.md)
@@ -138,6 +142,17 @@ def main():
     answer = next((post['message'] for post in reversed(litres_thread) if post['speaker'] == "assistant"), "(There was no answer)")
     answer = squarewheels.md_hard_breaks(answer) # e.g. reference list of "PMID: ..." lines
 
+    # Literature checked by the script (not written by LLM); all arrays are in the saved thread too
+    def _pmids_md(pmids):
+        return "\n".join(f"- PMID: {pmid}" for pmid in pmids) if pmids else "(None)"
+
+    literature_md = (
+        f"### Cited ({len(litres_pmids['cited'])})\n\n{_pmids_md(litres_pmids['cited'])}\n\n"
+        f"### Must-cite, not cited ({len(litres_pmids['must_cite_uncited'])})\n\n{_pmids_md(litres_pmids['must_cite_uncited'])}\n\n"
+        f"### Cited but never seen; possibly made up ({len(litres_pmids['cited_unseen'])})\n\n{_pmids_md(litres_pmids['cited_unseen'])}\n\n"
+        f"Seen by LLM: {len(litres_pmids['seen'])} (must-cite {len(litres_pmids['must_cite'])} + search results)\n"
+    )
+
     path_result.write_text(
         f"# Literature research result\n\n"
         f"- Date: {now:%Y-%m-%d %H:%M:%S (%:z)}\n"
@@ -145,7 +160,8 @@ def main():
         f"- Model: {LLM_model} / Embedding: {embedding_client.model}\n\n"
         f"## Research context\n\n{research_context}\n\n"
         f"## Request\n\n{request}\n\n"
-        f"## Answer\n\n{answer}\n",
+        f"## Answer\n\n{answer}\n\n"
+        f"## Literature\n\n{literature_md}",
         encoding="utf-8",
     )
     print(f"Result saved: {path_result}")

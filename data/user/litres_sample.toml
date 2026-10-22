@@ -11,6 +11,10 @@ request = '''
 提示されている研究テーマについて、10件程度の文献を参照しつつ、かんたんに既知の知見をまとめて教えてください。
 '''
 
+# Literature that must be cited, by PMID (optional).
+# Ones not stored yet are fetched from PubMed. They are passed to the LLM directly, not through search.
+# must_cite = ["12345678", "23456789"]
+
 # Publishers to exclude from literature search, by DOI prefix (optional).
 # Articles without DOI are not excluded.
 # exclude_doi_prefixes = ["10.xxxx", "10.yyyy"]   # DOI prefix: the part before "/" (e.g. "10.1234" in "10.1234/abc.567")
