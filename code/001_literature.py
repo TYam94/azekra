@@ -133,6 +133,7 @@ def main():
         path_result = Path(file_input).with_name(f"{Path(file_input).stem}_litres_{now:%Y%m%d_%H%M%S}.md")
 
     answer = next((post['message'] for post in reversed(litres_thread) if post['speaker'] == "assistant"), "(There was no answer)")
+    answer = squarewheels.md_hard_breaks(answer) # e.g. reference list of "PMID: ..." lines
 
     path_result.write_text(
         f"# Literature research result\n\n"

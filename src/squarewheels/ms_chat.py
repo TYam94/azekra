@@ -43,6 +43,34 @@ def post_clean(text: str, speaker: str) -> str:
     return post
 
 
+### Keep single line breaks in Markdown ---------------------------------------
+def md_hard_breaks(text: str) -> str:
+    """Keep single line breaks of the text when rendered as Markdown.
+    Markdown joins lines separated by a single line break into one line
+    (e.g. a list of "PMID: ..." lines without bullets), so two trailing spaces
+    (hard line break) are appended to each line directly followed by another non-blank line.
+
+    Args:
+        text: Markdown text.
+
+    Returns:
+        Text with hard line breaks. Lines inside code blocks (``` or ~~~) are left as they are.
+    """
+    lines = text.splitlines()
+    in_code = False
+
+    for i, line in enumerate(lines):
+        if re.match(r"\s*(```|~~~)", line):
+            in_code = not in_code
+            continue
+        if in_code or not line.strip() or line.endswith(("  ", "\\")):
+            continue
+        if i + 1 < len(lines) and lines[i + 1].strip() and not re.match(r"\s*(```|~~~)", lines[i + 1]):
+            lines[i] = f"{line.rstrip()}  "
+
+    return "\n".join(lines)
+
+
 ### Print the post to output --------------------------------------------------
 def post_print(post: str):
     """Print the post to output.
