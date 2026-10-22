@@ -243,7 +243,8 @@ def run_litres_vectorstore(
         client: LLM client.
         model: Model name to use.
         research_context: Research context passed to system prompt.
-        vectorstore: Vector-store of literatures (e.g. Chroma). Each document should have 'PMID' and 'publication_date' in its metadata.
+        vectorstore: Vector-store of literatures (e.g. Chroma).
+            Each document should have 'PMID' and 'publication_date' in its metadata. ('publication_types' and 'retracted' are optional; entries with retracted=True are never returned).
         pmids: If given, search is limited to these PMIDs. If None, whole vector-store is searched.
         request: User's request to the assistant.
         thread_maxlen: Maximum number of rounds.
@@ -260,9 +261,14 @@ def run_litres_vectorstore(
             "k": 50,
         }
 
+        # Exclude retracted ones ($ne keeps entries without 'retracted' in metadata)
+        search_filter = {"retracted": {"$ne": True}}
+
         # Limit to given PMIDs
         if pmids is not None:
-            search_kwargs["filter"] = {"PMID": {"$in": list(pmids)}}
+            search_filter = {"$and": [{"PMID": {"$in": list(pmids)}}, search_filter]}
+
+        search_kwargs["filter"] = search_filter
 
         retriever = vectorstore.as_retriever(
             search_type="similarity_score_threshold",
@@ -280,6 +286,7 @@ def run_litres_vectorstore(
                     f"{docs_md}"
                     f"# PMID: {doc.metadata["PMID"]} \n"
                     f"## Publication_date: {doc.metadata["publication_date"]} \n"
+                    f"## Publication_types: {doc.metadata.get("publication_types") or "Unknown"} \n"
                     f"{doc.page_content}\n\n"
                 )
             return docs_md
@@ -330,6 +337,8 @@ def run_litres_vectorstore(
             "If single search is not enough, **MAKE MULTIPLE TOOL CALLS to refine your answer**. \n"
             "Write out your citations explicitly in-line with identifier in database, like PMID. \n"
             "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
+            "Also consider its publication types (study design, e.g. Randomized Controlled Trial, Meta-Analysis, Case Reports) "
+            "as a rough indicator of the strength of evidence. Size and ethnicity of study cohort matters as well. \n"
             "\n"
             f"[Context]\n{research_context}\n"
             "\n"
