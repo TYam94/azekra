@@ -234,6 +234,7 @@ def run_litres_vectorstore(
     research_context,
     vectorstore,
     pmids = None,
+    exclude_doi_prefixes = None,
     request = "Please give brief introduction of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
     ):
@@ -246,6 +247,8 @@ def run_litres_vectorstore(
         vectorstore: Vector-store of literatures (e.g. Chroma).
             Each document should have 'PMID' and 'publication_date' in its metadata. ('publication_types' and 'retracted' are optional; entries with retracted=True are never returned).
         pmids: If given, search is limited to these PMIDs. If None, whole vector-store is searched.
+        exclude_doi_prefixes: If given, entries whose 'doi_prefix' in metadata is one of these are excluded
+            (e.g. ["10.xxxx", "10.yyyy"]). Entries without DOI are kept.
         request: User's request to the assistant.
         thread_maxlen: Maximum number of rounds.
 
@@ -262,13 +265,17 @@ def run_litres_vectorstore(
         }
 
         # Exclude retracted ones ($ne keeps entries without 'retracted' in metadata)
-        search_filter = {"retracted": {"$ne": True}}
+        search_filters = [{"retracted": {"$ne": True}}]
+
+        # Exclude given publishers by DOI prefix ($nin keeps entries without 'doi_prefix' in metadata)
+        if exclude_doi_prefixes:
+            search_filters.append({"doi_prefix": {"$nin": [prefix.lower() for prefix in exclude_doi_prefixes]}})
 
         # Limit to given PMIDs
         if pmids is not None:
-            search_filter = {"$and": [{"PMID": {"$in": list(pmids)}}, search_filter]}
+            search_filters.append({"PMID": {"$in": list(pmids)}})
 
-        search_kwargs["filter"] = search_filter
+        search_kwargs["filter"] = search_filters[0] if len(search_filters) == 1 else {"$and": search_filters}
 
         retriever = vectorstore.as_retriever(
             search_type="similarity_score_threshold",

@@ -2,10 +2,11 @@
 ## Input (optional) -----------------------------------------------------------
 # Leave None to use the input file. The input file is chosen in this order:
 #   .toml given as command-line argument > input_file below > [paths] litres_input in config.toml
-# research_context / request written here override the ones in the input file.
+# research_context / request / exclude_doi_prefixes written here override the ones in the input file.
 input_file = None         # e.g. "data/user/another_topic.toml" (relative to the current directory)
 research_context = None   # e.g. "I aim to elucidate ..."
 request = None            # e.g. "Please write introduction section ..."
+exclude_doi_prefixes = None   # e.g. ["10.xxxx", "10.yyyy"]; publishers excluded from literature search, by DOI prefix
 
 
 ## Environment ----------------------------------------------------------------
@@ -45,6 +46,7 @@ if research_context is None or request is None:
 
     if research_context is None: research_context = litres_input["research_context"]
     if request is None: request = litres_input["request"]
+    if exclude_doi_prefixes is None: exclude_doi_prefixes = litres_input.get("exclude_doi_prefixes")
 
 research_context = research_context.strip()
 request = request.strip()
@@ -115,13 +117,14 @@ def main():
         model=LLM_model, 
         research_context=research_context, 
         request=request,
-        vectorstore=PubMed_vectorstore
+        vectorstore=PubMed_vectorstore,
+        exclude_doi_prefixes=exclude_doi_prefixes,
     )
 
     squarewheels.thread_save(
         litres_thread,
         path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_vectorstore.json",
-        meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request},
+        meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request, "exclude_doi_prefixes": exclude_doi_prefixes},
     )
 
     # Save the final answer as Markdown next to the input file (<input>_litres_<datetime>.md)

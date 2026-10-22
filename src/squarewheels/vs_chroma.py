@@ -36,14 +36,20 @@ def Chroma_get(embedding, collection_name, path):
 ### Metadata of a stored PubMed abstract ------------------
 # Publication types are joined with "; " (Chroma metadata values are scalars).
 # Entries stored before publication types were recorded get "" and False.
+# doi and doi_prefix are left out for entries without DOI (Chroma metadata values cannot be None).
 def _metadata_PubMed(item):
 
-    return {
+    metadata = {
         "PMID": item["PMID"],
         "publication_date": item["publication_date"],
         "publication_types": "; ".join(item.get("publication_types", [])),
         "retracted": item.get("retracted", False),
     }
+    if item.get("doi"):
+        metadata["doi"] = item["doi"]
+        metadata["doi_prefix"] = item["doi_prefix"]
+
+    return metadata
 
 
 ### Add stored PubMed abstracts not yet in vector-store ---

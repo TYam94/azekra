@@ -138,21 +138,39 @@ def _extract_abstract(article):
     return _clean_abstract_text("\n".join(parts))
 
 
-### Extract publication types from fetched XML ------------
+### Fields from publication types and DOI ----------------
 # Retracted articles have "Retracted Publication" among their publication types.
-def _extract_publication_types(article):
+# doi_prefix is the registrant part of DOI, which identifies the publisher (e.g. "10.1234" in "10.1234/abc.567").
+# Articles without DOI get None for both.
+def _summary_fields(publication_types, doi):
 
-    return [str(pt) for pt in article["MedlineCitation"]["Article"].get("PublicationTypeList", [])]
+    doi = str(doi).strip() if doi else None
+
+    return {
+        "publication_types": publication_types,
+        "retracted": "Retracted Publication" in publication_types,
+        "doi": doi,
+        "doi_prefix": doi.split("/", 1)[0].lower() if doi else None,
+    }
 
 
-### Refresh publication types of stored entries ----------
-# Uses ESummary (lighter than EFetch) to tag entries stored without publication types
+### Extract publication types and DOI from fetched XML ----
+def _extract_summary_fields(article):
+
+    publication_types = [str(pt) for pt in article["MedlineCitation"]["Article"].get("PublicationTypeList", [])]
+    doi = next((x for x in article.get("PubmedData", {}).get("ArticleIdList", []) if x.attributes.get("IdType") == "doi"), None)
+
+    return _summary_fields(publication_types, doi)
+
+
+### Refresh publication types and DOI of stored entries --
+# Uses ESummary (lighter than EFetch) to tag entries stored without these fields
 # and to catch articles retracted after they were stored. Updates the entries in place.
 # Entries not returned by ESummary (e.g. deleted from PubMed) are left as they are.
-def _refresh_publication_types(PubMed_stored_absts, batch_size=500):
+def _refresh_summary_fields(PubMed_stored_absts, batch_size=500):
 
     pmids = [item["PMID"] for item in PubMed_stored_absts]
-    publication_types_all = {}
+    fields_all = {}
 
     for i in range(0, len(pmids), batch_size):
         handle = Entrez.esummary(db="pubmed", id=",".join(pmids[i:i + batch_size]))
@@ -161,30 +179,31 @@ def _refresh_publication_types(PubMed_stored_absts, batch_size=500):
 
         for summary in summaries:
             if "PubTypeList" in summary:
-                publication_types_all[str(summary["Id"])] = [str(pt) for pt in summary["PubTypeList"]]
+                fields_all[str(summary["Id"])] = _summary_fields(
+                    [str(pt) for pt in summary["PubTypeList"]],
+                    summary.get("ArticleIds", {}).get("doi"),
+                )
 
     n_updated = 0
     pmids_retracted_new = []
     for item in PubMed_stored_absts:
-        publication_types = publication_types_all.get(item["PMID"])
-        if publication_types is None or publication_types == item.get("publication_types"):
+        fields = fields_all.get(item["PMID"])
+        if fields is None or all(item.get(key) == value for key, value in fields.items()):
             continue
-        retracted = "Retracted Publication" in publication_types
-        if retracted and not item.get("retracted", False):
+        if fields["retracted"] and not item.get("retracted", False):
             pmids_retracted_new.append(item["PMID"])
-        item["publication_types"] = publication_types
-        item["retracted"] = retracted
+        item.update(fields)
         n_updated += 1
 
-    logger.info(f"PubMed publication types refreshed: {n_updated} / {len(pmids)} stored entries updated")
+    logger.info(f"PubMed publication types/DOI refreshed: {n_updated} / {len(pmids)} stored entries updated")
     if pmids_retracted_new:
         logger.warning(f"PubMed: newly marked as retracted: {', '.join(pmids_retracted_new)}")
 
 
 ### Fetch abstract based on PMID --------------------------
-# refresh_publication_types: If True, publication types (and so retraction status) of all stored entries
-#   are refreshed on load, which also tags entries stored before publication types were recorded.
-def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts, batch_size=1000, refresh_publication_types=True):
+# refresh_stored: If True, publication types (and so retraction status) and DOI of all stored entries
+#   are refreshed on load, which also tags entries stored before these fields were recorded.
+def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts, batch_size=1000, refresh_stored=True):
 
     # Containers
     results = []
@@ -199,8 +218,8 @@ def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts, batch_size=1000, refres
     else:
         PubMed_stored_absts = []
 
-    if refresh_publication_types and len(PubMed_stored_absts) > 0:
-        _refresh_publication_types(PubMed_stored_absts)
+    if refresh_stored and len(PubMed_stored_absts) > 0:
+        _refresh_summary_fields(PubMed_stored_absts)
 
     # Pick up stored ones (index by PMID for O(1) lookup)
     PubMed_stored_absts_index = {item.get("PMID"): item for item in PubMed_stored_absts}
@@ -248,14 +267,10 @@ def PubMed_fetch_abstracts(pmids, file_PubMed_abstracts, batch_size=1000, refres
                     day = pub_date.get("Day", "00").zfill(2)
                     date_str = f"{year}-{month}-{day}"
 
-                # Publication types
-                publication_types = _extract_publication_types(article)
-
                 pmids_fetch_absts.append({
                     "PMID": pmid,
                     "publication_date": date_str,
-                    "publication_types": publication_types,
-                    "retracted": "Retracted Publication" in publication_types,
+                    **_extract_summary_fields(article),
                     "abstract": _extract_abstract(article),
                     })
 
