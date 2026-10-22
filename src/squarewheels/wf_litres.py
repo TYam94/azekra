@@ -343,6 +343,8 @@ def run_litres_vectorstore(
             "Do not proceed to answering before you get enough amount of citations. \n"
             "If single search is not enough, **MAKE MULTIPLE TOOL CALLS to refine your answer**. \n"
             "Write out your citations explicitly in-line with identifier in database, like PMID. \n"
+            "Unless the user's request specifies otherwise, cite in-line as \"(PMID: 12345678)\" (multiple: \"(PMID: 12345678; PMID: 23456789)\"), "
+            "and list the cited ones at the end, one per line as \"PMID: 12345678\". \n"
             "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
             "Also consider its publication types (study design, e.g. Randomized Controlled Trial, Meta-Analysis, Case Reports) "
             "as a rough indicator of the strength of evidence. Size and ethnicity of study cohort matters as well. \n"
