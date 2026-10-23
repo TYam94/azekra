@@ -253,11 +253,18 @@ def run_litres_vectorstore(
     must_cite = None,
     request = "Please give brief introduction of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
+    litres_n_minimum = 20,
+    nudge_maximum = 3,
+    score_threshold_default = 0.45,
+    score_threshold_minimum = 0.3,
     ):
     """Answering with literature vector-store (RAG).
     LLM searches the vector-store with a tool, and answers the request citing the literature found.
-    The tool returns only the number of hits; the abstracts found so far (with must-cite ones first)
-    are passed to LLM as Markdown at the end of the prompt on every turn, each literature only once.
+    The tool returns only the numbers of hits (with how many are new, and the total found by search so far);
+    the abstracts found so far (with must-cite ones first) are passed to LLM as Markdown at the end of the prompt
+    on every turn, each literature only once.
+    If LLM answers before litres_n_minimum literatures are found by search, it is sent back to search more
+    (up to nudge_maximum times); the early answers stay in the thread.
 
     Args:
         client: LLM client.
@@ -272,11 +279,21 @@ def run_litres_vectorstore(
         must_cite: PMIDs the answer must cite. They should be in the vector-store already (missing and retracted ones are skipped with a warning).
             They are listed in the system prompt, and their abstracts are passed to LLM regardless of the search filters above.
         request: User's request to the assistant.
-        thread_maxlen: Maximum number of rounds.
+        thread_maxlen: Maximum number of rounds (each tool call or reply of LLM is a round).
+        litres_n_minimum: Minimum number of literatures to be found by search (must-cite ones are not counted)
+            before LLM's answer is accepted.
+        nudge_maximum: Maximum number of times LLM is sent back to search more. After that, the answer is accepted
+            even if fewer than litres_n_minimum were found (e.g. the vector-store has few related ones).
+        score_threshold_default: Similarity score threshold used when LLM does not give one.
+        score_threshold_minimum: Lower limit of the threshold; lower ones given by LLM are raised to this
+            (so that LLM cannot gather loosely related ones just to increase the number).
+            Scores depend on the embedding model (and on the query: broad ones score lower), so both should be
+            adjusted to the model. The defaults are for EmbeddingGemma 300M (typical scores 0.40-0.60).
 
     Returns:
         thread_master: Thread, with LLM response appended. The abstracts passed at the end of the prompt are not recorded in it.
-        pmids_cited: PMIDs cited in the answer, among the ones passed to LLM (in the order passed).
+            The answer is the last "assistant" post.
+        pmids_cited: PMIDs cited in the (last) answer, among the ones passed to LLM (in the order passed).
             They are matched as bare numbers too, so that they are caught in any citation style (e.g. "[12345678]").
             Cited ones never passed to LLM (possibly made up), and must-cite ones not cited, are logged as warnings.
     """
@@ -297,8 +314,30 @@ def run_litres_vectorstore(
     must_cite = [doc.metadata["PMID"] for doc in must_cite_docs]
     citations_md = abstracts_docs_to_md_PubMed([doc for doc in must_cite_docs if _seen(doc.metadata["PMID"])])
 
+    # Number of literatures found by search (must-cite ones are not counted)
+    def _n_found():
+        return len(pmids_seen) - len(must_cite)
+
+    # Tips for searching. Repeated when LLM is sent back to search more.
+    litres_tips = (
+        "When searching the database, please keep in mind following tips: \n"
+        " * Similarity scores are typically between 0.40 and 0.60. Short or broad queries score lower than specific ones. \n"
+        f" * Adjust `score_threshold` (default {score_threshold_default}) properly. If there are little citations, lower it a bit (e.g. 0.40), "
+        "rather than going down to the minimum at once. \n"
+        " * Consider break down elements and search subset of them separately. \n"
+        " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
+    )
+
     #### Compose tools for LLM ----------------------------
-    def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
+    def _tool_litres_vectorstore_search(query: str, score_threshold: float = None) -> str:
+        # Threshold: default if not given, and not lower than the minimum
+        if score_threshold is None:
+            score_threshold = score_threshold_default
+        threshold_note = ""
+        if score_threshold < score_threshold_minimum:
+            threshold_note = f"(`score_threshold` {score_threshold} was raised to the minimum {score_threshold_minimum}.) "
+            score_threshold = score_threshold_minimum
+
         # Exclude retracted ones ($ne keeps entries without 'retracted' in metadata)
         search_filters = [{"retracted": {"$ne": True}}]
 
@@ -324,10 +363,21 @@ def run_litres_vectorstore(
         nonlocal citations_md
 
         if not docs:
-            return f"No entry had similarity score above {score_threshold}"
+            return (
+                f"{threshold_note}"
+                f"No entry had similarity score above {score_threshold}. "
+                f"Total found by search so far: {_n_found()}. "
+                "Try making the query more specific (broad queries score lower), using different terms "
+                f"(e.g. full-spell instead of abbreviation), or lowering `score_threshold` a bit (e.g. 0.40; minimum {score_threshold_minimum})."
+            )
         else:
-            citations_md = f"{citations_md}{abstracts_docs_to_md_PubMed([doc for doc in docs if _seen(doc.metadata["PMID"])])}"
-            return f"The query retrieved {len(docs)} entries."
+            docs_new = [doc for doc in docs if _seen(doc.metadata["PMID"])]
+            citations_md = f"{citations_md}{abstracts_docs_to_md_PubMed(docs_new)}"
+            return (
+                f"{threshold_note}"
+                f"The query retrieved {len(docs)} entries ({len(docs_new)} new). "
+                f"Total found by search so far: {_n_found()}."
+            )
 
     LLM_tools = [
         {
@@ -335,8 +385,10 @@ def run_litres_vectorstore(
             "function": {
                 "name": "_tool_litres_vectorstore_search",
                 "description": (
-                    "Function to search literature database. "
-                    "Threshold of similarity can be adjusted via `score_threshold`. "
+                    "Function to search literature database by semantic similarity to the query. "
+                    "Returns the number of entries with similarity score above `score_threshold`, "
+                    "how many of them are new, and the total found by search so far. "
+                    "Abstracts of the found entries are given to you separately. "
                     "Database is in English, so input query in English. "
                     ),
                 "parameters": {
@@ -344,14 +396,16 @@ def run_litres_vectorstore(
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Statement/Keywords to search."
+                            "description": "Statement/Keywords to search. Specific queries score higher than short or broad ones."
                             },
                         "score_threshold": {
                             "type": "number",
                             "description": (
-                                "Threshold of similarity. Default is 0.5. "
-                                "Make it higher (0.7~) to obtain more narrow-ranged results. "
-                                "Make it lower (~0.3) to obtain more broad results. "
+                                f"Threshold of similarity score. Default is {score_threshold_default}. "
+                                "Scores are typically between 0.40 and 0.60. "
+                                "Make it higher (~0.55) to obtain more narrow-ranged results. "
+                                "Make it lower (~0.40) to obtain more broad results. "
+                                f"Values below {score_threshold_minimum} are raised to {score_threshold_minimum}. "
                                 )
                             },
                     },
@@ -384,14 +438,7 @@ def run_litres_vectorstore(
             "\n"
             f"[Literature that must be cited]\n{"\n".join(must_cite)}\n"
         )
-    system_message = (
-        f"{system_message}"
-        "\n"
-        "When searching the database, lease keep in mind following tips: \n"
-        " * Adjust `score_threshold` (Threshold of similarity) properly. If there are little citations, do make lower the threshold. \n"
-        " * Consider break down elements and search subset of them separately. \n"
-        " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
-    )
+    system_message = f"{system_message}\n{litres_tips}"
 
     thread_master = thread_master_append(
         thread_master=[],
@@ -406,6 +453,8 @@ def run_litres_vectorstore(
     )
 
     #### Run the thread -----------------------------------
+    n_nudge = 0
+
     for i in range(thread_maxlen):
         # Create response
         thread_master = thread_create_response(
@@ -420,13 +469,31 @@ def run_litres_vectorstore(
             tool_functions=LLM_tool_functions,
             temperature=0
         )
-        # Exit when the assistant replied (content or no response) instead of calling tools
-        if thread_master[-1]['speaker'] == "assistant": break
+        # Continue while LLM is calling tools
+        if thread_master[-1]['speaker'] != "assistant": continue
+
+        # LLM replied (content or no response) instead of calling tools:
+        # send it back to search more if too few were found by search, up to nudge_maximum times. Otherwise exit.
+        if _n_found() >= litres_n_minimum or n_nudge >= nudge_maximum: break
+
+        n_nudge += 1
+        thread_master = thread_master_append(
+            thread_master,
+            speaker="user",
+            speaker_message=(
+                f"You have found only {_n_found()} literatures by search so far"
+                f"{" (in addition to the ones that must be cited)" if must_cite else ""}. "
+                f"I want at least {litres_n_minimum}. "
+                "Please continue to search the database with other queries before answering. \n"
+                "\n"
+                f"{litres_tips}"
+            )
+        )
 
     #### Literature cited in the answer -------------------
     # Seen ones are matched as bare numbers too, so that they are caught in any citation style (e.g. "[12345678]").
     # Only pmids_cited is returned; the others are for the warnings below.
-    answer = thread_master[-1]['message'] if thread_master[-1]['speaker'] == "assistant" else ""
+    answer = next((post['message'] for post in reversed(thread_master) if post['speaker'] == "assistant"), "")
     pmids_cited = [pmid for pmid in pmids_seen if re.search(rf"(?<!\d){pmid}(?!\d)", answer)]
     pmids_cited_unseen = list(dict.fromkeys(pmid for pmid in re.findall(r"PMID:?\s*(\d+)", answer) if pmid not in pmids_seen))
 
