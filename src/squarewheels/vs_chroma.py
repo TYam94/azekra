@@ -101,3 +101,30 @@ def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts, batch_size=
         logger.info(f"Chroma_sync_abstracts_PubMed: {i + len(batch)} / {len(docs_new)} added")
 
     return len(docs_new)
+
+
+def Chroma_get_abstractsMD_PubMed(vectorstore, pmids, level_offset=0):
+    stored = vectorstore.get(where={"PMID": {"$in": pmids}}, include=["metadatas", "documents"])
+    pmids_found = {metadata["PMID"]: (metadata, document) for metadata, document in zip(stored["metadatas"], stored["documents"])}
+    citations_md = ""
+
+    def _litres_md(metadata, page_content, level_offset):
+
+        return (
+            f"#{"#" * level_offset} PMID: {metadata["PMID"]} \n"
+            f"##{"#" * level_offset} Publication_date: {metadata["publication_date"]} \n"
+            f"##{"#" * level_offset} Publication_types: {metadata.get("publication_types") or "Unknown"} \n"
+            f"{page_content}\n"
+        )
+    
+    for pmid in pmids:
+        if pmid not in pmids_found:
+            logger.warning(f"Chroma_get_abstractsMD_PubMed: PMID {pmid} is not in the vector-store; skipped")
+            continue
+        metadata, document = pmids_found[pmid]
+        if metadata.get("retracted"):
+            logger.warning(f"Chroma_get_abstractsMD_PubMed: PMID {pmid} is retracted")
+            continue
+        citations_md = f"{citations_md}\n{_litres_md(metadata, document, level_offset=level_offset)}"
+
+    return citations_md

@@ -5,8 +5,8 @@ import json
 import logging
 import re
 
-from .ms_chat import thread_create_response, thread_master_append
 from .db_pubmed import PubMed_search_PMID_array
+from .ms_chat import thread_create_response, thread_master_append
 
 ## Logging --------------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -235,7 +235,7 @@ def _litres_md(metadata, page_content):
         f"# PMID: {metadata["PMID"]} \n"
         f"## Publication_date: {metadata["publication_date"]} \n"
         f"## Publication_types: {metadata.get("publication_types") or "Unknown"} \n"
-        f"{page_content}\n\n"
+        f"{page_content}\n"
     )
 
 
@@ -275,6 +275,9 @@ def run_litres_vectorstore(
             'must_cite_uncited' (must_cite ones not cited in the answer).
     """
     #### Literature passed to LLM -------------------------
+    # Container
+    citations_md = ""
+
     # PMIDs seen by LLM, in the order seen (must_cite first, then the ones returned by search)
     pmids_seen = []
 
@@ -284,7 +287,7 @@ def run_litres_vectorstore(
 
     # Must-cite ones are taken directly from the vector-store (not by similarity)
     must_cite = [str(pmid) for pmid in (must_cite or [])]
-    must_cite_md = ""
+
     if must_cite:
         stored = vectorstore.get(where={"PMID": {"$in": must_cite}}, include=["metadatas", "documents"])
         must_cite_found = {metadata["PMID"]: (metadata, document) for metadata, document in zip(stored["metadatas"], stored["documents"])}
@@ -296,20 +299,14 @@ def run_litres_vectorstore(
             metadata, document = must_cite_found[pmid]
             if metadata.get("retracted"):
                 logger.warning(f"run_litres_vectorstore: must-cite PMID {pmid} is retracted")
-            must_cite_md = f"{must_cite_md}{_litres_md(metadata, document)}"
+                continue
+            citations_md = f"{citations_md}\n{_litres_md(metadata, document)}"
             _seen(pmid)
 
         must_cite = [pmid for pmid in must_cite if pmid in must_cite_found]
 
     #### Compose tools for LLM ----------------------------
     def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
-
-        # Generate retriever dynamically with given threshold
-        search_kwargs = {
-            "score_threshold": score_threshold,
-            "k": 50,
-        }
-
         # Exclude retracted ones ($ne keeps entries without 'retracted' in metadata)
         search_filters = [{"retracted": {"$ne": True}}]
 
@@ -321,23 +318,26 @@ def run_litres_vectorstore(
         if pmids is not None:
             search_filters.append({"PMID": {"$in": list(pmids)}})
 
+        # Generate retriever dynamically with given settings
+        search_kwargs = {"score_threshold": score_threshold, "k": 100,}
         search_kwargs["filter"] = search_filters[0] if len(search_filters) == 1 else {"$and": search_filters}
-
         retriever = vectorstore.as_retriever(
             search_type="similarity_score_threshold",
             search_kwargs=search_kwargs,
         )
 
+        # Run query
         docs = retriever.invoke(query)
+
+        nonlocal citations_md
 
         if not docs:
             return f"No entry had similarity score above {score_threshold}"
         else:
-            docs_md = ""
             for doc in docs:
-                docs_md = f"{docs_md}{_litres_md(doc.metadata, doc.page_content)}"
+                citations_md = f"{citations_md}\n{_litres_md(doc.metadata, doc.page_content)}"
                 _seen(doc.metadata["PMID"])
-            return docs_md
+            return f"The query retrieved {len(docs)} entries."
 
     LLM_tools = [
         {
@@ -375,40 +375,39 @@ def run_litres_vectorstore(
     LLM_tool_functions = {"_tool_litres_vectorstore_search": _tool_litres_vectorstore_search}
 
     #### Prepare the thread -------------------------------
+    system_message = (
+        "You are working as a literature research assistant. \n"
+        "Respond to the user's request BASED ON database search using given tools. \n"
+        "Do not proceed to answering before you get enough amount of citations. "
+        "If single search is not enough, **MAKE MULTIPLE TOOL CALLS to refine your answer**. \n"
+        "Write out your citations explicitly in-line with identifier as \"(PMID: 12345678)\" (multiple: \"(PMID: 12345678; PMID: 23456789)\"). \n"
+        "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
+        "Also consider its publication types (study design, e.g. Randomized Controlled Trial, Meta-Analysis, Case Reports) "
+        "as a rough indicator of the strength of evidence. Size and ethnicity of study cohort matters as well. \n"
+        "If the user gives literatures that must be cited, cite ALL of them, in addition to the ones you find by search. \n"
+        "\n"
+        f"[Context]\n{research_context}\n"
+    )
+    if must_cite:
+        system_message = (
+            f"{system_message}"
+            "\n"
+            f"[Literature that must be cited]\n{"\n".join(must_cite)}\n"
+        )
+    system_message = (
+        f"{system_message}"
+        "\n"
+        "When searching the database, lease keep in mind following tips: \n"
+        " * Adjust `score_threshold` (Threshold of similarity) properly. If there are little citations, do make lower the threshold. \n"
+        " * Consider break down elements and search subset of them separately. \n"
+        " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
+    )
+
     thread_master = thread_master_append(
         thread_master=[],
         speaker="system",
-        speaker_message=(
-            "You are working as a literature research assistant. \n"
-            "Respond to the user's request BASED ON database search using given tools. \n"
-            "Do not proceed to answering before you get enough amount of citations. \n"
-            "If single search is not enough, **MAKE MULTIPLE TOOL CALLS to refine your answer**. \n"
-            "Write out your citations explicitly in-line with identifier in database, like PMID. \n"
-            "Unless the user's request specifies otherwise, cite in-line as \"(PMID: 12345678)\" (multiple: \"(PMID: 12345678; PMID: 23456789)\"), "
-            "and list the cited ones at the end, one per line as \"PMID: 12345678\". \n"
-            "When selecting literature to cite, consider its publication date/year to make your response up-to-date. \n"
-            "Also consider its publication types (study design, e.g. Randomized Controlled Trial, Meta-Analysis, Case Reports) "
-            "as a rough indicator of the strength of evidence. Size and ethnicity of study cohort matters as well. \n"
-            "If the user gives literature that must be cited, cite ALL of them, in addition to the ones you find by search. \n"
-            "\n"
-            f"[Context]\n{research_context}\n"
-            "\n"
-            "Please keep in mind following tips: \n"
-            " * Adjust `score_threshold` (Threshold of similarity) properly. If there are little citations, do make lower the threshold. \n"
-            " * Consider break down elements and search subset of them separately. \n"
-            " * Abbreviations can be good or bad: Consider replacing abbreviations to full-spell, or vice versa. \n"
-        )
+        speaker_message=system_message
     )
-
-    if must_cite_md:
-        request = (
-            f"{request}\n"
-            "\n"
-            "[Literature that must be cited]\n"
-            "Cite ALL of the following, in addition to the ones you find by search. \n"
-            "\n"
-            f"{must_cite_md}"
-        )
 
     thread_master = thread_master_append(
         thread_master,
@@ -418,11 +417,12 @@ def run_litres_vectorstore(
 
     #### Run the thread -----------------------------------
     for i in range(thread_maxlen):
-
+        # Create response
         thread_master = thread_create_response(
             client=client,
             model=model,
             thread_master=thread_master,
+            message_tail=f"You currently have these citations:\n{citations_md}",
             speaker_current="assistant",
             fmt_dialog=False,
             tools=LLM_tools,
@@ -430,7 +430,6 @@ def run_litres_vectorstore(
             tool_functions=LLM_tool_functions,
             temperature=0
         )
-
         # Exit when the assistant replied (content or no response) instead of calling tools
         if thread_master[-1]['speaker'] == "assistant": break
 
@@ -453,4 +452,4 @@ def run_litres_vectorstore(
     if litres_pmids["must_cite_uncited"]:
         logger.warning(f"run_litres_vectorstore: must-cite ones not cited: {', '.join(litres_pmids['must_cite_uncited'])}")
 
-    return thread_master, litres_pmids
+    return thread_master, pmids_cited

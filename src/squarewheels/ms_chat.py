@@ -72,7 +72,7 @@ def md_hard_breaks(text: str) -> str:
 
 
 ### Print the post to output --------------------------------------------------
-def post_print(post: str):
+def post_print(post: str, print_reasoning=False):
     """Print the post to output.
 
     Args:
@@ -88,7 +88,7 @@ def post_print(post: str):
         text = f"[{post['speaker']} | {post['datetime']}]"
 
         # reasoning_content is not returned by some models
-        if post_parsed.get("reasoning_content"):
+        if print_reasoning == True and post_parsed.get("reasoning_content"):
             text = f"{text}\n  reasoning_content:\n{textwrap.indent(post_parsed.get("reasoning_content"), "    ")}"
 
         if post_parsed.get("tool_calls"):
@@ -116,7 +116,7 @@ def post_print(post: str):
 
 
 ### Make prompt-thread from the master-thread ---------------------------------
-def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, fmt_dialog=False):
+def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, message_tail=None, fmt_dialog=False):
     """Make prompt from thread.
 
     Args:
@@ -157,6 +157,9 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
 
         thread_prompt.append({"role": post_prompt_role, "content": post_prompt_content})
 
+    if message_tail:
+        thread_prompt.append({"role": "user", "content": message_tail})
+
     return thread_prompt
 
 
@@ -194,6 +197,8 @@ def thread_create_response(
     model, 
     speaker_current, 
     thread_master, 
+    prompt_system=None,
+    message_tail=None, 
     fmt_dialog=False,
     string_noresponse = "(There was no response)",
     tools = None, 
@@ -220,7 +225,8 @@ def thread_create_response(
     thread_prompt = thread_master_to_prompt(
         thread_master=thread_master,
         speaker_current=speaker_current,
-        fmt_dialog=False
+        message_tail=message_tail,
+        fmt_dialog=fmt_dialog
     )
 
     # Generate response
