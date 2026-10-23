@@ -2,12 +2,13 @@
 ## Input (optional) -----------------------------------------------------------
 # Leave None to use the input file. The input file is chosen in this order:
 #   .toml given as command-line argument > input_file below > [paths] litres_input in config.toml
-# research_context / request / exclude_doi_prefixes / must_cite written here override the ones in the input file.
+# research_context / request / exclude_doi_prefixes / must_cite / litres_n_minimum written here override the ones in the input file.
 input_file = None         # e.g. "data/user/another_topic.toml" (relative to the current directory)
 research_context = None   # e.g. "I aim to elucidate ..."
 request = None            # e.g. "Please write introduction section ..."
 exclude_doi_prefixes = None   # e.g. ["10.xxxx", "10.yyyy"]; publishers excluded from literature search, by DOI prefix
 must_cite = None          # e.g. ["12345678", "23456789"]; PMIDs the answer must cite (fetched from PubMed if not stored)
+litres_n_minimum = None   # e.g. 30; literatures to be found by search before the answer is accepted (default 20)
 
 
 ## Environment ----------------------------------------------------------------
@@ -49,10 +50,12 @@ if research_context is None or request is None:
     if request is None: request = litres_input["request"]
     if exclude_doi_prefixes is None: exclude_doi_prefixes = litres_input.get("exclude_doi_prefixes")
     if must_cite is None: must_cite = litres_input.get("must_cite")
+    if litres_n_minimum is None: litres_n_minimum = litres_input.get("litres_n_minimum")
 
 research_context = research_context.strip()
 request = request.strip()
 must_cite = [str(pmid).strip() for pmid in (must_cite or [])] # PMIDs may be written as numbers
+litres_n_minimum = 20 if litres_n_minimum is None else int(litres_n_minimum)
 
 ### LLM/Embedding -------------------------------------------------------------
 # lmstudio
@@ -123,6 +126,7 @@ def main():
         vectorstore=PubMed_vectorstore,
         exclude_doi_prefixes=exclude_doi_prefixes,
         must_cite=must_cite,
+        litres_n_minimum=litres_n_minimum,
     )
 
     squarewheels.thread_save(
@@ -135,7 +139,8 @@ def main():
             "embedding": embedding_client.model, 
             "research_context": research_context, 
             "request": request, 
-            "exclude_doi_prefixes": exclude_doi_prefixes, 
+            "exclude_doi_prefixes": exclude_doi_prefixes,
+            "litres_n_minimum": litres_n_minimum,
             "litres_pmids": pmids_cited},
     )
 

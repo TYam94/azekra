@@ -15,6 +15,10 @@ request = '''
 # Ones not stored yet are fetched from PubMed. They are passed to the LLM directly, not through search.
 must_cite = ["36333501"]
 
+# Minimum number of literatures to be found by search before the answer is accepted (optional; default 20).
+# Must-cite ones are not counted. If the LLM answers with fewer, it is sent back to search more (up to 3 times).
+# litres_n_minimum = 30
+
 # Publishers to exclude from literature search, by DOI prefix (optional).
 # Articles without DOI are not excluded.
 exclude_doi_prefixes = ["10.3390"]   # DOI prefix: the part before "/" (e.g. "10.1234" in "10.1234/abc.567")
