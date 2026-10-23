@@ -78,28 +78,28 @@ embedding_client = OpenAIEmbeddings(
 ## Main -----------------------------------------------------------------------
 def main():
     
-    # # Search PubMed using LLM
-    # global search_thread
-    # search_thread = squarewheels.run_litres_search_PubMed(
-    #     client=LLM_client,
-    #     model=LLM_model,
-    #     research_context=research_context,
-    # )
+    # Search PubMed using LLM
+    global search_thread
+    search_thread = squarewheels.run_litres_search_PubMed(
+        client=LLM_client,
+        model=LLM_model,
+        research_context=research_context,
+    )
 
-    # squarewheels.thread_save(
-    #     search_thread,
-    #     path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_search_PubMed.json",
-    #     meta={"workflow": "run_litres_search_PubMed", "input": None if file_input is None else str(file_input), "model": LLM_model, "research_context": research_context},
-    # )
+    squarewheels.thread_save(
+        search_thread,
+        path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_search_PubMed.json",
+        meta={"workflow": "run_litres_search_PubMed", "input": None if file_input is None else str(file_input), "model": LLM_model, "research_context": research_context},
+    )
 
-    # # Searched PMIDs are in the last post
-    # PubMed_PMIDs = [pmid for pmid in search_thread[-1]['message'].split(", ") if pmid]
+    # Searched PMIDs are in the last post
+    PubMed_PMIDs = [pmid for pmid in search_thread[-1]['message'].split(", ") if pmid]
 
-    # # Gather abstracts from locally-stored ones and PubMed (must-cite ones too)
-    # squarewheels.PubMed_fetch_abstracts(
-    #     pmids=list(dict.fromkeys(PubMed_PMIDs + must_cite)),
-    #     file_PubMed_abstracts=config["paths"]["PubMed_abstracts"],
-    # )
+    # Gather abstracts from locally-stored ones and PubMed (must-cite ones too)
+    squarewheels.PubMed_fetch_abstracts(
+        pmids=list(dict.fromkeys(PubMed_PMIDs + must_cite)),
+        file_PubMed_abstracts=config["paths"]["PubMed_abstracts"],
+    )
 
     # Open vector-store and add stored abstracts not yet in it
     PubMed_vectorstore = squarewheels.Chroma_get(
@@ -128,7 +128,15 @@ def main():
     squarewheels.thread_save(
         litres_thread,
         path=config["paths"]["threads"] / f"{datetime.now().astimezone():%Y%m%d_%H%M%S}_litres_vectorstore.json",
-        meta={"workflow": "run_litres_vectorstore", "input": None if file_input is None else str(file_input), "model": LLM_model, "embedding": embedding_client.model, "research_context": research_context, "request": request, "exclude_doi_prefixes": exclude_doi_prefixes, "litres_pmids": litres_pmids},
+        meta={
+            "workflow": "run_litres_vectorstore", 
+            "input": None if file_input is None else str(file_input), 
+            "model": LLM_model, 
+            "embedding": embedding_client.model, 
+            "research_context": research_context, 
+            "request": request, 
+            "exclude_doi_prefixes": exclude_doi_prefixes, 
+            "litres_pmids": pmids_cited},
     )
 
     # Save the final answer as Markdown next to the input file (<input>_litres_<datetime>.md)
