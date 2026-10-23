@@ -146,7 +146,7 @@ def main():
     def _pmids_md(pmids):
         return "\n".join(f"- PMID: {pmid}" for pmid in pmids) if pmids else "(None)"
 
-    literature_md = squarewheels.Chroma_get_abstractsMD_PubMed(PubMed_vectorstore, pmids_cited, level_offset=2)
+    literature_md = squarewheels.Chroma_get_abstracts_PubMed(PubMed_vectorstore, pmids_cited, output="md", level_offset=2)
 
     path_result.write_text(
         f"# Literature research result\n\n"

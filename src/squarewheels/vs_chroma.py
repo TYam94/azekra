@@ -15,10 +15,19 @@ logger = logging.getLogger(__name__)
 
 ## Opening --------------------------------------------------------------------
 ### Open (or create) persistent vector-store --------------
-# Vectors depend on the embedding model; use separate collection per model (e.g. include model name in collection_name).
-# Characters not allowed in Chroma collection name are replaced with "_", and non-alphanumeric ends are trimmed.
 def Chroma_get(embedding, collection_name, path):
+    """Open (or create) persistent vector-store.
 
+    Args:
+        embedding: Embedding model (e.g. OpenAIEmbeddings).
+            Vectors depend on the embedding model; use separate collection per model (e.g. include model name in collection_name).
+        collection_name: Name of the collection. Characters not allowed in Chroma collection name are replaced with "_",
+            and non-alphanumeric ends are trimmed.
+        path: Directory of the vector-store. Created if not exists.
+
+    Returns:
+        vectorstore: Chroma vector-store.
+    """
     collection_name = re.sub(r"[^a-zA-Z0-9._-]", "_", collection_name).strip("._-")
 
     Path(path).mkdir(parents=True, exist_ok=True)
@@ -53,11 +62,22 @@ def _metadata_PubMed(item):
 
 
 ### Add stored PubMed abstracts not yet in vector-store ---
-# "PMID:<PMID>" is used as the id of each entry.
-# Entries already in vector-store get their metadata updated if it changed (no re-embedding).
-# Returns the number of added entries.
 def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts, batch_size=1000):
+    """Add stored PubMed abstracts not yet in vector-store.
+    "PMID:<PMID>" is used as the id of each entry.
+    Entries already in vector-store get their metadata updated if it changed (no re-embedding).
 
+    Args:
+        vectorstore: Chroma vector-store (see Chroma_get).
+        file_PubMed_abstracts: JSON file of stored abstracts (see PubMed_fetch_abstracts).
+        batch_size: Number of entries added/updated at once.
+
+    Returns:
+        Number of added entries.
+
+    Raises:
+        FileNotFoundError: If file_PubMed_abstracts does not exist.
+    """
     # Load stored abstracts from PubMed
     file_path = Path(file_PubMed_abstracts)
     if not file_path.exists():
@@ -103,28 +123,69 @@ def Chroma_sync_abstracts_PubMed(vectorstore, file_PubMed_abstracts, batch_size=
     return len(docs_new)
 
 
-def Chroma_get_abstractsMD_PubMed(vectorstore, pmids, level_offset=0):
-    stored = vectorstore.get(where={"PMID": {"$in": pmids}}, include=["metadatas", "documents"])
-    pmids_found = {metadata["PMID"]: (metadata, document) for metadata, document in zip(stored["metadatas"], stored["documents"])}
-    citations_md = ""
+## Getting --------------------------------------------------------------------
+### Get stored PubMed abstracts by PMID -------------------
+def Chroma_get_abstracts_PubMed(vectorstore, pmids, output="docs", level_offset=0):
+    """Get stored PubMed abstracts by PMID (not by similarity).
+    Missing and retracted ones are skipped with a warning.
 
-    def _litres_md(metadata, page_content, level_offset):
+    Args:
+        vectorstore: Chroma vector-store (see Chroma_get).
+        pmids: PMIDs to get.
+        output: "docs" for a list of Document (same as search results), or "md" for Markdown (see abstracts_docs_to_md_PubMed).
+        level_offset: Passed to abstracts_docs_to_md_PubMed. Used only when output is "md".
 
-        return (
-            f"#{"#" * level_offset} PMID: {metadata["PMID"]} \n"
-            f"##{"#" * level_offset} Publication_date: {metadata["publication_date"]} \n"
-            f"##{"#" * level_offset} Publication_types: {metadata.get("publication_types") or "Unknown"} \n"
-            f"{page_content}\n"
-        )
-    
-    for pmid in pmids:
-        if pmid not in pmids_found:
-            logger.warning(f"Chroma_get_abstractsMD_PubMed: PMID {pmid} is not in the vector-store; skipped")
-            continue
-        metadata, document = pmids_found[pmid]
-        if metadata.get("retracted"):
-            logger.warning(f"Chroma_get_abstractsMD_PubMed: PMID {pmid} is retracted")
-            continue
-        citations_md = f"{citations_md}\n{_litres_md(metadata, document, level_offset=level_offset)}"
+    Returns:
+        Abstracts in the order of pmids, as a list of Document or as a Markdown string ([] or "" for none).
 
-    return citations_md
+    Raises:
+        ValueError: If output is neither "docs" nor "md".
+    """
+    if output not in ("docs", "md"):
+        raise ValueError(f"output must be 'docs' or 'md', got {output!r}")
+
+    docs = []
+
+    # Chroma does not accept an empty list for $in
+    if pmids:
+        stored = vectorstore.get(where={"PMID": {"$in": list(pmids)}}, include=["metadatas", "documents"])
+        pmids_found = {metadata["PMID"]: Document(page_content=document, metadata=metadata) for metadata, document in zip(stored["metadatas"], stored["documents"])}
+
+        for pmid in pmids:
+            if pmid not in pmids_found:
+                logger.warning(f"Chroma_get_abstracts_PubMed: PMID {pmid} is not in the vector-store; skipped")
+                continue
+            if pmids_found[pmid].metadata.get("retracted"):
+                logger.warning(f"Chroma_get_abstracts_PubMed: PMID {pmid} is retracted; skipped")
+                continue
+            docs.append(pmids_found[pmid])
+
+    if output == "md":
+        return abstracts_docs_to_md_PubMed(docs, level_offset=level_offset)
+    return docs
+
+
+## Markdown -------------------------------------------------------------------
+### PubMed abstracts (documents) as Markdown --------------
+def abstracts_docs_to_md_PubMed(docs, level_offset=0):
+    """PubMed abstracts (documents) as Markdown.
+    Used both for passing literature to LLM and for writing it out.
+    Each entry is "# PMID: ..." with its publication date and types as sub-headings, followed by the abstract.
+
+    Args:
+        docs: List of Document, with 'PMID' and 'publication_date' in metadata ('publication_types' is optional).
+        level_offset: Number of "#" added to each heading (e.g. 2 to put them under "## ...").
+
+    Returns:
+        Markdown string. Each entry starts with a blank line; "" for no documents.
+    """
+    h ="#" * level_offset
+
+    return "".join(
+        f"\n"
+        f"#{h} PMID: {doc.metadata["PMID"]} \n"
+        f"##{h} Publication_date: {doc.metadata["publication_date"]} \n"
+        f"##{h} Publication_types: {doc.metadata.get("publication_types") or "Unknown"} \n"
+        f"{doc.page_content}\n"
+        for doc in docs
+    )

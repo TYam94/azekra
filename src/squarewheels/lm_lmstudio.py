@@ -32,18 +32,34 @@ def _lms_run(args):
 
 ## Functions/Modules ==========================================================
 ### Start LM Studio -----------------------------------------------------------
-# Wake up the daemon and start the API server.
 def lms_start():
+    """Start LM Studio: wake up the daemon and start the API server (via `lms` CLI).
 
+    Returns:
+        None
+
+    Raises:
+        RuntimeError: If `lms` fails.
+    """
     _lms_run(["daemon", "up"])
     _lms_run(["server", "start"])
 
 
 ### Load LLM ------------------------------------------------------------------
-# Load requested LLM. If not found, it will load other available option.
-# Returns the name of loaded model.
 def lms_load_LLM(model_request=None, model_default=None):
+    """Load LLM in LM Studio (if not loaded yet).
 
+    Args:
+        model_request: Model key to load. If None or not available locally, model_default is used.
+        model_default: Model key used instead of model_request. If this is not available either,
+            the first one of local LLMs is used.
+
+    Returns:
+        Model key of the loaded model.
+
+    Raises:
+        RuntimeError: If `lms` fails.
+    """
     # List available LLM in local
     lms_ls = json.loads(_lms_run(["ls", "--llm", "--json"]))
     list_LLM_local = [model['modelKey'] for model in lms_ls]
@@ -70,10 +86,20 @@ def lms_load_LLM(model_request=None, model_default=None):
 
 
 ### Load embedding model ------------------------------------------------------
-# Load requested embedding model. If not found, it will load other available option.
-# Returns the name of loaded model.
 def lms_load_embeddingmodel(model_request=None, model_default=None):
+    """Load embedding model in LM Studio (if not loaded yet).
 
+    Args:
+        model_request: Model key to load. If None or not available locally, model_default is used.
+        model_default: Model key used instead of model_request. If this is not available either,
+            the first one of local embedding models is used.
+
+    Returns:
+        Model key of the loaded model.
+
+    Raises:
+        RuntimeError: If `lms` fails.
+    """
     # List available embedding models in local
     lms_ls = json.loads(_lms_run(["ls", "--embedding", "--json"]))
     list_embedding_local = [model['modelKey'] for model in lms_ls]

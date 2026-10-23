@@ -11,11 +11,18 @@ logger = logging.getLogger(__name__)
 
 ## Loading --------------------------------------------------------------------
 ### Load config.toml --------------------------------------
-# If path is None, config.toml is searched from the current directory up to its parents.
-# Values in [paths] are resolved relative to the config file, and returned as absolute Path.
-# Returns the config as dict.
 def config_load(path=None):
+    """Load config.toml.
 
+    Args:
+        path: Path of the config file. If None, config.toml is searched from the current directory up to its parents.
+
+    Returns:
+        config: Config as dict. Values in [paths] are resolved relative to the config file, as absolute Path.
+
+    Raises:
+        FileNotFoundError: If path is None and config.toml is not found.
+    """
     # Find config file
     if path is None:
         for dir in [Path.cwd(), *Path.cwd().parents]:

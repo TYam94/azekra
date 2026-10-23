@@ -74,9 +74,12 @@ def md_hard_breaks(text: str) -> str:
 ### Print the post to output --------------------------------------------------
 def post_print(post: str, print_reasoning=False):
     """Print the post to output.
+    Tool calls ("ChatCompletionMessage") are shown as their calls, tool responses with their content shortened,
+    and other posts with messages over 5000 characters truncated.
 
     Args:
         post: The post to print. It must be a dict with keys 'speaker', 'datetime', and 'message'.
+        print_reasoning: If True, reasoning_content of tool calls is printed too (when the model returns it).
 
     Returns:
         None
@@ -123,6 +126,8 @@ def thread_master_to_prompt(thread_master, speaker_current, prompt_system=None, 
         thread_master: Master thread.
         speaker_current: The name of current speaker to whom you want to pass converted prompt.
         prompt_system: If given, this text will be used as system prompt.
+        message_tail: If given, added as the last user message. Not recorded in the thread
+            (e.g. information that changes every turn, like literature found so far).
         fmt_dialog: Whether the output should be formatted in dialog style.
             When False, speakers are not denoted. Suitable for one-to-one (one user and one assistant) thread.
             When true, speakers are denoted like "<speaker>: <post>". This is for multi-agent thread.
@@ -207,15 +212,21 @@ def thread_create_response(
     **kwargs
     ):
     """Create response to the thread with LLM.
+    If LLM calls tools, the call and each tool response are appended (as "ChatCompletionMessage" and "tool_response");
+    call this again to let LLM continue with the responses. Otherwise LLM's reply is appended as speaker_current.
 
     Args:
         client: LLM client.
         model: Model name to use.
         speaker_current: Name of the speaker.
         thread_master: Master thread.
+        prompt_system: Passed to thread_master_to_prompt: if given, used as system prompt (added before the thread).
+        message_tail: Passed to thread_master_to_prompt: added as the last user message, not recorded in the thread.
+        fmt_dialog: Passed to thread_master_to_prompt.
+        string_noresponse: Message appended when LLM neither called tools nor replied.
         tools: Tools for LLM. Passed to `tools` in `client.chat.completions.create()`.
         tool_functions: Tool functions. Names and contents should be compatible with `tools`. Ideally, should return a string (MD is okay).
-        tool_choice: Tool choice. Passed to tool_choice` in `client.chat.completions.create()`.
+        tool_choice: Tool choice. Passed to `tool_choice` in `client.chat.completions.create()`.
         **kwargs: Any other parameters you want to pass to `client.chat.completions.create()`.
 
     Returns:
@@ -223,6 +234,7 @@ def thread_create_response(
     """
     # Construct a prompt from master-thread
     thread_prompt = thread_master_to_prompt(
+        prompt_system=prompt_system,
         thread_master=thread_master,
         speaker_current=speaker_current,
         message_tail=message_tail,
@@ -329,11 +341,23 @@ def thread_load(path):
 
 ## Quick wrappers -------------------------------------------------------------
 ### Boolean judge -------------------------------------------------------------
-# To pass proper client (LLM client instance) and model (valid name of the model) is the responsibility of the CALLER.
-# prompt_system: Background for the question
-# prompt_user:   Question which should be answered with True/False
 def LLM_boolean(client, model, prompt_system, prompt_user):
+    """Ask LLM a True/False question, and get the probabilities from logprobs of the first token ("T" or "F").
+    To pass proper client (LLM client instance) and model (valid name of the model) is the responsibility of the CALLER.
+    The prompts should ask LLM to answer with "T" or "F".
 
+    Args:
+        client: LLM client.
+        model: Model name to use. It must return logprobs.
+        prompt_system: Background for the question.
+        prompt_user: Question which should be answered with True/False.
+
+    Returns:
+        {"T_prob", "F_prob"}: Probabilities of True and False, normalized between the two.
+
+    Raises:
+        ValueError: If neither "T" nor "F" is among the top 10 candidates of the first token.
+    """
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -369,7 +393,16 @@ def LLM_boolean(client, model, prompt_system, prompt_user):
 
 ### Translation of RQ, Ja to En ---------------------------
 def rq_to_En(client, model, rq):
+    """Translate research question into brief English, in a single line.
 
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        rq: Research question. If it is already in English, it is passed through.
+
+    Returns:
+        Translated research question (line breaks in the reply are joined with spaces).
+    """
     response = client.chat.completions.create(
         model=model,
         messages=[
@@ -393,7 +426,18 @@ def rq_to_En(client, model, rq):
 
 ### Research question to keywords ---------------------------------------------
 def rq_to_query(client, model, rq, n_set=3, n_keywords=3):
+    """Make search queries (sets of English keywords) from research question.
 
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        rq: Research question (research context).
+        n_set: Number of queries to ask for.
+        n_keywords: Number of keywords per query to ask for.
+
+    Returns:
+        Set of queries, each as keywords separated by a space. LLM may not follow n_set/n_keywords exactly.
+    """
     response = client.chat.completions.create(
         model=model, 
         messages=[

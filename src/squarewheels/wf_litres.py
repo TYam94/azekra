@@ -7,6 +7,7 @@ import re
 
 from .db_pubmed import PubMed_search_PMID_array
 from .ms_chat import thread_create_response, thread_master_append
+from .vs_chroma import Chroma_get_abstracts_PubMed, abstracts_docs_to_md_PubMed
 
 ## Logging --------------------------------------------------------------------
 logger = logging.getLogger(__name__)
@@ -24,7 +25,20 @@ def run_litres_search_PubMed(
     litres_i_maximum = 20,
     litres_gain_minimum = 0.05
     ):
-    """Searching PubMed with LLM
+    """Searching PubMed with LLM.
+    LLM makes queries for the research context, and searches PubMed with them round by round.
+    After each round, an automatic user message tells LLM how many were found and whether to continue.
+
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        research_context: Research context passed to system prompt.
+        litres_n_minimum: Search continues at least until this number of literatures is found.
+        litres_n_maximum: Search finishes when this number is reached. Also the maximum number kept per query.
+        litres_i_minimum: Minimum number of rounds (unless litres_n_maximum is reached).
+        litres_i_maximum: Maximum number of rounds.
+        litres_gain_minimum: Search finishes when the ratio of newly found ones in a round falls to this or below
+            (after litres_n_minimum and litres_i_minimum are satisfied).
 
     Returns:
         thread_master: Thread of the search. The last post holds the searched PMIDs, joined by ", ".
@@ -228,17 +242,6 @@ def run_litres_search_PubMed(
     return thread_master
 
 
-### Literature entry as Markdown (passed to LLM) ------------------------------
-def _litres_md(metadata, page_content):
-
-    return (
-        f"# PMID: {metadata["PMID"]} \n"
-        f"## Publication_date: {metadata["publication_date"]} \n"
-        f"## Publication_types: {metadata.get("publication_types") or "Unknown"} \n"
-        f"{page_content}\n"
-    )
-
-
 ### Answering with literature vector-store (RAG) ------------------------------
 def run_litres_vectorstore(
     client,
@@ -251,59 +254,48 @@ def run_litres_vectorstore(
     request = "Please give brief introduction of that context. I assume ~10 citations will be required.",
     thread_maxlen = 100,
     ):
-    """Answering with literature vector-store (RAG)
+    """Answering with literature vector-store (RAG).
+    LLM searches the vector-store with a tool, and answers the request citing the literature found.
+    The tool returns only the number of hits; the abstracts found so far (with must-cite ones first)
+    are passed to LLM as Markdown at the end of the prompt on every turn, each literature only once.
 
     Args:
         client: LLM client.
         model: Model name to use.
         research_context: Research context passed to system prompt.
         vectorstore: Vector-store of literatures (e.g. Chroma).
-            Each document should have 'PMID' and 'publication_date' in its metadata. ('publication_types' and 'retracted' are optional; entries with retracted=True are never returned).
+            Each document should have 'PMID' and 'publication_date' in its metadata.
+            ('publication_types', 'retracted' and 'doi_prefix' are optional; entries with retracted=True are never returned).
         pmids: If given, search is limited to these PMIDs. If None, whole vector-store is searched.
-        exclude_doi_prefixes: If given, entries whose 'doi_prefix' in metadata is one of these are excluded
+        exclude_doi_prefixes: If given, entries whose 'doi_prefix' in metadata is one of these are excluded from search
             (e.g. ["10.xxxx", "10.yyyy"]). Entries without DOI are kept.
-        must_cite: PMIDs the answer must cite. They should be in the vector-store already (missing ones are skipped with a warning).
-            Their abstracts are passed to LLM with the request, regardless of the search filters above.
+        must_cite: PMIDs the answer must cite. They should be in the vector-store already (missing and retracted ones are skipped with a warning).
+            They are listed in the system prompt, and their abstracts are passed to LLM regardless of the search filters above.
         request: User's request to the assistant.
         thread_maxlen: Maximum number of rounds.
 
     Returns:
-        thread_master: Thread, with LLM response appended.
-        litres_pmids: PMIDs of literature, each in an array:
-            'must_cite' (given and found in the vector-store), 'seen' (must_cite + all returned by search, in the order seen),
-            'cited' (seen ones cited in the answer), 'cited_unseen' (cited as "PMID: ..." but never seen; possibly made up),
-            'must_cite_uncited' (must_cite ones not cited in the answer).
+        thread_master: Thread, with LLM response appended. The abstracts passed at the end of the prompt are not recorded in it.
+        pmids_cited: PMIDs cited in the answer, among the ones passed to LLM (in the order passed).
+            They are matched as bare numbers too, so that they are caught in any citation style (e.g. "[12345678]").
+            Cited ones never passed to LLM (possibly made up), and must-cite ones not cited, are logged as warnings.
     """
     #### Literature passed to LLM -------------------------
-    # Container
-    citations_md = ""
-
     # PMIDs seen by LLM, in the order seen (must_cite first, then the ones returned by search)
+    # Returns True only when the PMID is new, so that each entry is added to citations_md once.
     pmids_seen = []
 
     def _seen(pmid):
-        if pmid not in pmids_seen:
-            pmids_seen.append(pmid)
+        if pmid in pmids_seen:
+            return False
+        pmids_seen.append(pmid)
+        return True
 
     # Must-cite ones are taken directly from the vector-store (not by similarity)
-    must_cite = [str(pmid) for pmid in (must_cite or [])]
-
-    if must_cite:
-        stored = vectorstore.get(where={"PMID": {"$in": must_cite}}, include=["metadatas", "documents"])
-        must_cite_found = {metadata["PMID"]: (metadata, document) for metadata, document in zip(stored["metadatas"], stored["documents"])}
-
-        for pmid in must_cite:
-            if pmid not in must_cite_found:
-                logger.warning(f"run_litres_vectorstore: must-cite PMID {pmid} is not in the vector-store; skipped")
-                continue
-            metadata, document = must_cite_found[pmid]
-            if metadata.get("retracted"):
-                logger.warning(f"run_litres_vectorstore: must-cite PMID {pmid} is retracted")
-                continue
-            citations_md = f"{citations_md}\n{_litres_md(metadata, document)}"
-            _seen(pmid)
-
-        must_cite = [pmid for pmid in must_cite if pmid in must_cite_found]
+    # Missing and retracted ones are skipped (with a warning) and removed from must_cite.
+    must_cite_docs = Chroma_get_abstracts_PubMed(vectorstore, [str(pmid) for pmid in (must_cite or [])])
+    must_cite = [doc.metadata["PMID"] for doc in must_cite_docs]
+    citations_md = abstracts_docs_to_md_PubMed([doc for doc in must_cite_docs if _seen(doc.metadata["PMID"])])
 
     #### Compose tools for LLM ----------------------------
     def _tool_litres_vectorstore_search(query: str, score_threshold: float = 0.5) -> str:
@@ -334,9 +326,7 @@ def run_litres_vectorstore(
         if not docs:
             return f"No entry had similarity score above {score_threshold}"
         else:
-            for doc in docs:
-                citations_md = f"{citations_md}\n{_litres_md(doc.metadata, doc.page_content)}"
-                _seen(doc.metadata["PMID"])
+            citations_md = f"{citations_md}{abstracts_docs_to_md_PubMed([doc for doc in docs if _seen(doc.metadata["PMID"])])}"
             return f"The query retrieved {len(docs)} entries."
 
     LLM_tools = [
@@ -435,6 +425,7 @@ def run_litres_vectorstore(
 
     #### Literature cited in the answer -------------------
     # Seen ones are matched as bare numbers too, so that they are caught in any citation style (e.g. "[12345678]").
+    # Only pmids_cited is returned; the others are for the warnings below.
     answer = thread_master[-1]['message'] if thread_master[-1]['speaker'] == "assistant" else ""
     pmids_cited = [pmid for pmid in pmids_seen if re.search(rf"(?<!\d){pmid}(?!\d)", answer)]
     pmids_cited_unseen = list(dict.fromkeys(pmid for pmid in re.findall(r"PMID:?\s*(\d+)", answer) if pmid not in pmids_seen))
