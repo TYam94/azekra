@@ -329,7 +329,7 @@ def run_litres_vectorstore(
     )
 
     #### Compose tools for LLM ----------------------------
-    def _tool_litres_vectorstore_search(query: str, score_threshold: float = None) -> str:
+    def _tool_litres_vectorstore_search(query: str, score_threshold: float | None = None) -> str:
         # Threshold: default if not given, and not lower than the minimum
         if score_threshold is None:
             score_threshold = score_threshold_default
@@ -350,7 +350,7 @@ def run_litres_vectorstore(
             search_filters.append({"PMID": {"$in": list(pmids)}})
 
         # Generate retriever dynamically with given settings
-        search_kwargs = {"score_threshold": score_threshold, "k": 100,}
+        search_kwargs = {"score_threshold": score_threshold, "k": (2 * litres_n_minimum)}
         search_kwargs["filter"] = search_filters[0] if len(search_filters) == 1 else {"$and": search_filters}
         retriever = vectorstore.as_retriever(
             search_type="similarity_score_threshold",
