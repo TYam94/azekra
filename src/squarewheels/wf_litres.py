@@ -14,11 +14,58 @@ logger = logging.getLogger(__name__)
 
 
 ## Running pre-defined thread =================================================
+### Research context to questions ---------------------------------------------
+def runLLM_context_to_questions(client, model, research_context, n_questions=3):
+    """Make search queries (sets of English keywords) from research question.
+
+    Args:
+        client: LLM client.
+        model: Model name to use.
+        research_context: Research question (research context).
+        n_questions: Number of queries to ask for.
+
+    Returns:
+        Set of questions, each as keywords separated by a space. LLM may not follow n_set/n_keywords exactly.
+    """
+    system_message = (
+        f"Generate up to {n_questions} different questions related to given research context.  \n"
+        "Questions must be one of : \n"
+        " - Research question itself which that research context bare \n"
+        " - Question that nourishes background understanding/knowledges related to main topics \n"
+        "Output English sentences, one line per each. Do not include line numbers, labels, or extra text. \n"
+        "Consider using full-spell rather than abbreviations when it looks suitable as searching query. \n"
+        "If you found given sentences concise enough to be treated as single question, you can consider returning only original text as well."
+    )
+
+    thread_master = thread_master_append(
+        thread_master=[],
+        speaker="system",
+        speaker_message=system_message
+    )
+
+    thread_master = thread_master_append(
+        thread_master,
+        speaker="user",
+        speaker_message= f"[Research Context]\n{research_context}"
+    )
+
+    thread_master = thread_create_response(
+        client=client,
+        model=model,
+        thread_master=thread_master,
+        speaker_current="assistant",
+        fmt_dialog=False,
+        temperature=0.2
+    )
+
+    return thread_master, thread_master[-1]['message'] 
+
+
 ### Searching PubMed with LLM -------------------------------------------------
-def run_litres_search_PubMed(
+def runLLM_litres_search_PubMed(
     client,
     model,
-    research_context,
+    research_questions,
     litres_n_minimum = 100, 
     litres_n_maximum = 3000, 
     litres_i_minimum = 3, 
@@ -26,13 +73,13 @@ def run_litres_search_PubMed(
     litres_gain_minimum = 0.05
     ):
     """Searching PubMed with LLM.
-    LLM makes queries for the research context, and searches PubMed with them round by round.
+    LLM makes queries for the research questions, and searches PubMed with them round by round.
     After each round, an automatic user message tells LLM how many were found and whether to continue.
 
     Args:
         client: LLM client.
         model: Model name to use.
-        research_context: Research context passed to system prompt.
+        research_questions: Research questions passed to system prompt.
         litres_n_minimum: Search continues at least until this number of literatures is found.
         litres_n_maximum: Search finishes when this number is reached. Also the maximum number kept per query.
         litres_i_minimum: Minimum number of rounds (unless litres_n_maximum is reached).
@@ -129,11 +176,11 @@ def run_litres_search_PubMed(
         speaker="system",
         speaker_message=(
             "You are working as a literature research assistant. \n"
-            "Your current target is to gather tons of literature that can be related to given context. \n"
+            "Your current target is to gather tons of literature that can be related to given questions. \n"
             "Continue search as long as user requests. \n"
-            "Start from specific search query, and then make scope broader when user requests more information. \n"
+            "Start from very specific search query, and then make scope broader when user requests more information. \n"
             "\n"
-            f"[Context]\n{research_context}\n"
+            f"[Questions]\n{research_questions}\n"
             "\n"
             f"{litres_tips}"
         )
@@ -142,7 +189,10 @@ def run_litres_search_PubMed(
     thread_master = thread_master_append(
         thread_master,
         speaker="user",
-        speaker_message="Please search for the literatures related to the topic."
+        speaker_message=(
+            "Please search for the literatures related to the topic. \n"
+            "Start from very specific combination of words, and then make scope broader when user requests more information."
+        )
     )
 
     # Automatic user response -------------------------------------------------
@@ -243,7 +293,7 @@ def run_litres_search_PubMed(
 
 
 ### Answering with literature vector-store (RAG) ------------------------------
-def run_litres_vectorstore(
+def runLLM_litres_vectorstore(
     client,
     model,
     research_context,

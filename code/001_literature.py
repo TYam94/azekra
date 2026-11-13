@@ -80,13 +80,19 @@ embedding_client = OpenAIEmbeddings(
 
 ## Main -----------------------------------------------------------------------
 def main():
-    
-    # Search PubMed using LLM
-    global search_thread
-    search_thread = squarewheels.run_litres_search_PubMed(
+
+    _thread_rq, research_questions = squarewheels.runLLM_context_to_questions(
         client=LLM_client,
         model=LLM_model,
-        research_context=research_context,
+        research_context=research_context
+    )
+
+    # Search PubMed using LLM
+    global search_thread
+    search_thread = squarewheels.runLLM_litres_search_PubMed(
+        client=LLM_client,
+        model=LLM_model,
+        research_questions=research_questions,
     )
 
     squarewheels.thread_save(
@@ -118,7 +124,7 @@ def main():
 
     # Literature-based answer from LLM
     global litres_thread, pmids_cited
-    litres_thread, pmids_cited = squarewheels.run_litres_vectorstore(
+    litres_thread, pmids_cited = squarewheels.runLLM_litres_vectorstore(
         client=LLM_client,
         model=LLM_model,
         research_context=research_context,
